@@ -1,0 +1,536 @@
+// The workspace: every blot as a card with its image, drawn shapes and exposure
+// controls, all visible at the same time.
+(function () {
+  "use strict";
+  const WB = (window.WB = window.WB || {});
+  const { dom, app, state, processing, lanes, num } = WB;
+  const workspace = (WB.workspace = {});
+
+  const COLORS = {
+    lane: "#ffd400",
+    current: "#ff7a00",
+    peak: "#ffd400",
+    unused: "#9a9a9a",
+    roi: "#00c8ff",
+    figure: "#00d26a",
+    mw: "#00b7ff",
+    band: "#ff3df2",
+    draw: "#ff4040",
+  };
+
+  // [y, x] in image coordinates of a pointer event over a card's overlay
+  workspace.toImage = function (svg, event) {
+    const p = new DOMPoint(event.clientX, event.clientY).matrixTransform(svg.getScreenCTM().inverse());
+    return [p.y, p.x];
+  };
+
+  // Follow the pointer until it is released.
+  workspace.drag = function (event, svg, onMove, onEnd) {
+    event.preventDefault();
+    event.stopPropagation();
+    const start = workspace.toImage(svg, event);
+    const move = (e) => onMove(workspace.toImage(svg, e), start, e);
+    const up = (e) => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      if (onEnd) onEnd(workspace.toImage(svg, e), start, e);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+
+  // ------------------------------------------------------------------- canvas
+
+  // The blot, merged with its brightfield image if it has one. The brightfield
+  // is shown with the same polarity as the blot (bright marker bands next to
+  // bright blot bands, or dark next to dark), each with its own exposure.
+  function drawCanvas(blot, canvas) {
+    const { wb, bf } = blot.work;
+    const t = blot.session.transform;
+    canvas.width = wb.w;
+    canvas.height = wb.h;
+    const gray = processing.compose(wb, t.bf_show ? bf : null, t);
+    const image = new ImageData(wb.w, wb.h);
+    const out = image.data;
+    for (let i = 0; i < gray.length; i++) {
+      out[4 * i] = out[4 * i + 1] = out[4 * i + 2] = gray[i];
+      out[4 * i + 3] = 255;
+    }
+    canvas.getContext("2d").putImageData(image, 0, 0);
+  }
+
+  // ------------------------------------------------------------------ overlay
+
+  // The shape being drawn with a tool right now: { blotId, tool, start, end }.
+  // It is part of what the overlay draws, so it survives redraws.
+  let drawing = null;
+
+  const pointsAttr = (poly) => poly.map(([y, x]) => `${x},${y}`).join(" ");
+
+  function figureBox(blot) {
+    const { w, h } = blot.work.wb;
+    return blot.session.figure.crop || [-0.5, -0.5, h - 0.5, w - 0.5];
+  }
+  workspace.figureBox = figureBox;
+
+  function drawOverlay(blot, svg) {
+    const { w, h } = blot.work.wb;
+    svg.setAttribute("viewBox", `-0.5 -0.5 ${w} ${h}`);
+    svg.replaceChildren();
+    const px = w / state.cardWidth; // image pixels per screen pixel
+    const isSelected = blot.id === state.selected;
+    const add = (tag, attrs, ...kids) => {
+      const node = dom.svg(tag, { "vector-effect": "non-scaling-stroke", ...attrs }, ...kids);
+      svg.append(node);
+      return node;
+    };
+    const handle = (y, x, t, cursor, onDown) =>
+      add("circle", {
+        cx: x,
+        cy: y,
+        r: 5 * px,
+        class: "handle",
+        "data-t": t,
+        style: `cursor:${cursor}`,
+        // while a tool is active, a press starts a new drawing instead
+        onpointerdown: (ev) => { if (!state.tool) onDown(ev); },
+      });
+    const redraw = () => drawOverlay(blot, svg);
+
+    // A rectangle [y0, x0, y1, x1] that can be moved and resized by its corners.
+    const editableRect = (get, set, { t, color, dash, done }) => {
+      const [y0, x0, y1, x1] = get();
+      add("rect", {
+        x: Math.min(x0, x1), y: Math.min(y0, y1), width: Math.abs(x1 - x0), height: Math.abs(y1 - y0),
+        class: "shape", "data-t": t, stroke: color, "stroke-width": 2, "stroke-dasharray": dash,
+        style: "cursor:move",
+        onpointerdown: (ev) => {
+          if (state.tool) return;
+          app.select(blot.id);
+          const origin = get().slice();
+          workspace.drag(ev, svg, ([y, x], [sy, sx]) => {
+            set([origin[0] + y - sy, origin[1] + x - sx, origin[2] + y - sy, origin[3] + x - sx]);
+            redraw();
+          }, done);
+        },
+      });
+      [[0, 1], [0, 3], [2, 1], [2, 3]].forEach(([yi, xi]) =>
+        handle(get()[yi], get()[xi], `${t}-corner`, "nwse-resize", (ev) => {
+          app.select(blot.id);
+          workspace.drag(ev, svg, ([y, x]) => {
+            const box = get().slice();
+            box[yi] = y;
+            box[xi] = x;
+            set(box);
+            redraw();
+          }, () => {
+            const c = get();
+            set([Math.min(c[0], c[2]), Math.min(c[1], c[3]), Math.max(c[0], c[2]), Math.max(c[1], c[3])]);
+            done();
+          });
+        }));
+    };
+
+    // gel area for lane detection
+    if (blot.roi && state.tab === "lanes") {
+      const [y0, x0, y1, x1] = blot.roi;
+      add("rect", {
+        x: x0, y: y0, width: x1 - x0, height: y1 - y0,
+        class: "shape", stroke: COLORS.roi, "stroke-dasharray": "6 4", "data-t": "roi",
+      });
+    }
+
+    // lanes
+    const list = blot.session.lanes;
+    list.forEach((lane, i) => {
+      const current = isSelected && i === state.lane;
+      const poly = lanes.polygon(lane);
+      add("polygon", {
+        points: pointsAttr(poly),
+        class: "shape lane",
+        "data-t": "lane",
+        "data-index": i,
+        stroke: current ? COLORS.current : COLORS.lane,
+        "stroke-width": current ? 2 : 1.2,
+        onpointerdown: (ev) => {
+          if (state.tool) return;
+          app.select(blot.id, i);
+          const origin = { x: lane.x_center, y0: lane.y0, y1: lane.y1 };
+          workspace.drag(
+            ev, svg,
+            ([y, x], [sy, sx]) => {
+              lane.x_center = origin.x + (x - sx);
+              lane.y0 = origin.y0 + (y - sy);
+              lane.y1 = origin.y1 + (y - sy);
+              redraw();
+            },
+            () => {
+              app.sortLanes(blot);
+              app.changed("lanes");
+            }
+          );
+        },
+      });
+      add("text", {
+        x: poly[0][1] + 3 * px, y: poly[0][0] + 13 * px, "font-size": 12 * px, // inside the lane's top corner
+        fill: current ? COLORS.current : COLORS.lane, class: "note",
+      }, i + 1);
+
+      // peak borders, display only
+      const hw = 0.5 * lane.width;
+      for (const peak of lane.peaks) {
+        for (const pos of [peak.start, peak.end]) {
+          const a = lanes.point(lane, pos, -hw);
+          const b = lanes.point(lane, pos, hw);
+          add("line", {
+            x1: a[1], y1: a[0], x2: b[1], y2: b[0], class: "note", "data-t": "peak-mark",
+            stroke: peak.quantify ? COLORS.peak : COLORS.unused, "stroke-width": 1,
+          });
+        }
+      }
+
+      if (current && state.tab === "lanes") {
+        const len = lanes.length(lane);
+        const top = lanes.point(lane, 0);
+        const bottom = lanes.point(lane, len);
+        const right = lanes.point(lane, len / 2, hw);
+        const knob = lanes.point(lane, -18 * px);
+        add("line", { x1: top[1], y1: top[0], x2: knob[1], y2: knob[0], stroke: COLORS.current, class: "note" });
+        const finish = () => app.changed("lanes");
+        handle(top[0], top[1], "handle-lane-top", "ns-resize", (ev) =>
+          workspace.drag(ev, svg, ([y]) => {
+            app.setLaneTop(lane, Math.min(y, lane.y1 - 4));
+            redraw();
+          }, finish));
+        handle(bottom[0], bottom[1], "handle-lane-bottom", "ns-resize", (ev) =>
+          workspace.drag(ev, svg, ([y]) => {
+            lane.y1 = Math.max(y, lane.y0 + 4);
+            redraw();
+          }, finish));
+        handle(right[0], right[1], "handle-lane-width", "ew-resize", (ev) =>
+          workspace.drag(ev, svg, ([, x]) => {
+            lane.width = Math.max(2 * Math.abs(x - lane.x_center), 2);
+            redraw();
+          }, finish));
+        handle(knob[0], knob[1], "handle-lane-tilt", "grab", (ev) =>
+          workspace.drag(ev, svg, ([y, x]) => {
+            // the knob sits above the lane: tilt follows the line from it to the centre
+            const angle = (Math.atan2(lane.x_center - x, lanes.yCenter(lane) - y) * 180) / Math.PI;
+            lane.tilt_deg = num.clip(angle, -30, 30);
+            redraw();
+          }, finish));
+      }
+    });
+
+    // figure area and markers
+    const fig = blot.session.figure;
+    if (state.tab === "figure") {
+      const [y0, x0, y1, x1] = figureBox(blot);
+      if (fig.crop)
+        editableRect(() => fig.crop, (box) => (fig.crop = box), {
+          t: "figure-area", color: COLORS.figure, done: () => app.changed("figure"),
+        });
+      const markerSet = (markers, side, color, t) => {
+        const edge = side === "left" ? x0 : x1;
+        const dir = side === "left" ? 1 : -1;
+        markers.forEach((m, k) => {
+          const inside = m.y >= y0 && m.y <= y1;
+          add("line", {
+            x1: edge, y1: m.y, x2: edge + dir * 0.12 * (x1 - x0), y2: m.y, class: "note",
+            stroke: color, "stroke-width": 2, opacity: inside ? 1 : 0.4,
+          });
+          add("text", {
+            x: edge + dir * 0.13 * (x1 - x0), y: m.y + 4 * px, "font-size": 12 * px, fill: color,
+            class: "note", "text-anchor": side === "left" ? "start" : "end",
+          }, m.text);
+          // a wide invisible line to grab
+          add("line", {
+            x1: edge, y1: m.y, x2: edge + dir * 0.2 * (x1 - x0), y2: m.y, "data-t": t, "data-index": k,
+            stroke: "transparent", "stroke-width": 12, style: "cursor:ns-resize",
+            onpointerdown: (ev) => {
+              if (state.tool) return;
+              app.select(blot.id);
+              workspace.drag(ev, svg, ([y]) => {
+                m.y = y;
+                redraw();
+              }, () => {
+                markers.sort((a, b) => a.y - b.y);
+                app.changed("figure", "panel");
+              });
+            },
+          });
+        });
+      };
+      markerSet(fig.mw_markers, fig.mw_side, COLORS.mw, "mw-marker");
+      markerSet(fig.band_markers, fig.band_side, COLORS.band, "band-marker");
+    }
+  
+    // shapes drawn in the Prepare step, waiting to be applied
+    if (state.tab === "prepare") {
+      const pending = blot.pending;
+      const shapeMoved = () => app.changed("tool");
+      if (pending.crop)
+        editableRect(() => pending.crop, (box) => (pending.crop = box), {
+          t: "crop-shape", color: COLORS.draw, dash: "6 4", done: shapeMoved,
+        });
+      if (pending.level) {
+        const [[ya, xa], [yb, xb]] = pending.level;
+        add("line", {
+          x1: xa, y1: ya, x2: xb, y2: yb, class: "note", "data-t": "level-shape",
+          stroke: COLORS.draw, "stroke-width": 2,
+        });
+        [0, 1].forEach((end) =>
+          handle(pending.level[end][0], pending.level[end][1], "level-end", "move", (ev) => {
+            app.select(blot.id);
+            workspace.drag(ev, svg, (point) => {
+              pending.level[end] = point;
+              redraw();
+            }, shapeMoved);
+          }));
+      }
+    }
+
+    // the shape being drawn right now
+    if (drawing && drawing.blotId === blot.id) {
+      const [sy, sx] = drawing.start;
+      const [y, x] = drawing.end;
+      if (drawing.tool === "level")
+        add("line", { x1: sx, y1: sy, x2: x, y2: y, class: "note", "data-t": "drawing", stroke: COLORS.draw, "stroke-width": 2 });
+      else
+        add("rect", {
+          x: Math.min(x, sx), y: Math.min(y, sy), width: Math.abs(x - sx), height: Math.abs(y - sy),
+          class: "shape note", "data-t": "drawing", stroke: COLORS.draw, "stroke-width": 2, "stroke-dasharray": "6 4",
+        });
+    }
+  }
+
+  // Drawing a rectangle or a line with the active tool.
+  function startTool(blot, svg, event) {
+    const tool = state.tool;
+    app.select(blot.id);
+    const start = workspace.toImage(svg, event);
+    drawing = { blotId: blot.id, tool, start, end: start };
+    workspace.drag(event, svg, (point) => {
+      drawing.end = point;
+      drawOverlay(blot, svg);
+    }, ([y, x], [sy, sx]) => {
+      drawing = null;
+      state.tool = null;
+      const box = [Math.min(y, sy), Math.min(x, sx), Math.max(y, sy), Math.max(x, sx)];
+      const big = Math.abs(y - sy) + Math.abs(x - sx) > 4;
+      if (big) workspace.finishTool(tool, blot, box, [[sy, sx], [y, x]]);
+      app.changed("tool", "panel");
+    });
+  }
+
+  // What a finished drawing leaves behind. Boxes are in overlay coordinates
+  // (pixel edges at .5). Crop and straighten only leave a shape, which can be
+  // adjusted and is applied from the Prepare panel.
+  workspace.finishTool = function (tool, blot, box, line) {
+    if (tool === "crop") {
+      blot.pending.crop = box;
+    } else if (tool === "level") {
+      blot.pending.level = line;
+    } else if (tool === "roi") {
+      blot.roi = box;
+      app.changed("lanes");
+    } else if (tool === "figarea") {
+      blot.session.figure.crop = box;
+      app.changed("figure");
+    }
+  };
+
+  workspace.applyCrop = function (blot) {
+    if (!blot.pending.crop) return;
+    // shape coordinates are pixel edges - 0.5
+    app.setCrop(blot, blot.pending.crop.map((v) => v + 0.5));
+    app.changed("panel");
+  };
+
+  // Rotate so that the drawn line becomes horizontal or vertical, whichever is nearer.
+  workspace.straighten = function (blot) {
+    if (!blot.pending.level) return;
+    const [start, end] = blot.pending.level;
+    const delta = processing.levelingAngle(start, end);
+    const angle = ((blot.session.transform.rotation_deg + delta + 180) % 360 + 360) % 360 - 180;
+    app.setRotation(blot, Math.round(angle * 100) / 100);
+    app.changed("panel");
+  };
+
+  workspace.discard = function (blot, what) {
+    blot.pending[what] = null;
+    app.changed("tool", "panel");
+  };
+
+  // -------------------------------------------------------------------- cards
+
+  // One row of min / max / gamma / Auto. `keys` name the fields of the blot's
+  // transform that the row edits; `prefix` distinguishes the rows for the tests.
+  function exposureRow(blot, label, prefix, keys, image, range, autoHigh) {
+    const t = blot.session.transform;
+    const [lo, hi] = range;
+    const step = (hi - lo) / 1000 || 1;
+    const set = (index, value) => {
+      const limits = t[keys.limits].slice();
+      limits[index] = value;
+      if (limits[1] <= limits[0]) limits[1 - index] = index ? value - step : value + step;
+      t[keys.limits] = limits;
+      app.changed("display");
+    };
+    const slider = (index, name) =>
+      dom.el("input", {
+        type: "range", min: lo, max: hi, step, value: t[keys.limits][index], "data-t": prefix + name,
+        oninput: (ev) => set(index, parseFloat(ev.target.value)),
+      });
+    return dom.el("div", { class: "exposure", "data-t": `${prefix}exposure` },
+      dom.el("span", { class: "exposure-label" }, label),
+      dom.el("label", {}, "min", slider(0, "min")),
+      dom.el("label", {}, "max", slider(1, "max")),
+      dom.el("label", {}, "γ", dom.number(t[keys.gamma], { t: `${prefix}gamma`, min: 0.1, max: 5, step: 0.05, width: 52 }, (v) => {
+        t[keys.gamma] = v;
+        app.changed("display");
+      })),
+      dom.button("Auto", `${prefix}auto`, () => {
+        t[keys.limits] = processing.autoContrast(image, 0.5, autoHigh);
+        app.changed("display", "exposure");
+      }, "Set min and max from the image"));
+  }
+
+  // Exposure of the blot and, if it has one, of its brightfield image.
+  function exposureControls(blot) {
+    const t = blot.session.transform;
+    const { wb, bf, range, bfRange } = blot.work;
+    const rows = [exposureRow(blot, bf ? "Blot" : "", "", { limits: "contrast_limits", gamma: "gamma" }, wb, range, 99.8)];
+    rows[0].append(dom.check("Invert", t.invert_lut, "invert", (v) => {
+      t.invert_lut = v;
+      app.changed("display");
+    }, "Invert the display only; measured values do not change"));
+    if (bf)
+      rows.push(exposureRow(blot, "Brightfield", "bf-", { limits: "bf_contrast_limits", gamma: "bf_gamma" }, bf, bfRange, 99.5));
+    return dom.el("div", { class: "card-controls" }, rows);
+  }
+
+  const DRAG_TYPE = "application/x-webblot-blot";
+
+  function card(blot) {
+    const canvas = dom.el("canvas", {});
+    const svg = dom.svg("svg", { class: "overlay", "data-t": "overlay", preserveAspectRatio: "none" });
+    svg.addEventListener("pointerdown", (ev) => {
+      if (state.tool) startTool(blot, svg, ev);
+    });
+    const node = dom.el("div", {
+        class: "card", "data-t": "card", "data-id": blot.id,
+        onpointerdown: () => { if (state.selected !== blot.id) app.select(blot.id); },
+      },
+      dom.el("div", { class: "card-head" },
+        dom.el("span", {
+          class: "grip", "data-t": "blot-grip", draggable: "true",
+          title: "Drag beside another blot to change the order, or onto another blot's image to use this one as its brightfield",
+          ondragstart: (ev) => {
+            ev.dataTransfer.setData(DRAG_TYPE, String(blot.id));
+            ev.dataTransfer.effectAllowed = "move";
+            ev.dataTransfer.setDragImage(node, 20, 20);
+          },
+        }, "⠿"),
+        dom.text(blot.name, "blot-name", (v) => {
+          blot.name = v.trim() || blot.name;
+          app.changed("panel");
+        }, { class: "name" }),
+        dom.el("span", { class: "dim", "data-t": "dim" }),
+        dom.button("↑", "blot-up", () => app.moveBlot(blot.id, -1), "Move up in the figure"),
+        dom.button("↓", "blot-down", () => app.moveBlot(blot.id, 1), "Move down in the figure"),
+        dom.button("×", "blot-remove", () => {
+          if (confirm(`Remove '${blot.name}'?`)) app.removeBlot(blot.id);
+        }, "Remove this blot")),
+      dom.el("div", { class: "stage" }, canvas, svg),
+      exposureControls(blot));
+    node._blot = { canvas, svg };
+    // A blot dragged here: onto the image it becomes this blot's brightfield;
+    // anywhere else on the card it is put before or after this blot.
+    const carriesBlot = (ev) => ev.dataTransfer && [...ev.dataTransfer.types].includes(DRAG_TYPE);
+    const stage = node.querySelector(".stage");
+    const dropKind = (ev) => {
+      if (stage.contains(ev.target)) return "merge";
+      const r = node.getBoundingClientRect();
+      return ev.clientX < r.left + r.width / 2 ? "before" : "after";
+    };
+    const clearDrop = () => node.classList.remove("drop-merge", "drop-before", "drop-after");
+    node.addEventListener("dragover", (ev) => {
+      if (!carriesBlot(ev)) return;
+      ev.preventDefault();
+      ev.dataTransfer.dropEffect = "move";
+      clearDrop();
+      node.classList.add(`drop-${dropKind(ev)}`);
+    });
+    node.addEventListener("dragleave", (ev) => {
+      if (!node.contains(ev.relatedTarget)) clearDrop();
+    });
+    node.addEventListener("drop", (ev) => {
+      clearDrop();
+      if (!carriesBlot(ev)) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      const sourceId = Number(ev.dataTransfer.getData(DRAG_TYPE));
+      const kind = dropKind(ev);
+      if (kind === "merge") app.mergeAsBrightfield(sourceId, blot.id);
+      else app.moveBlotTo(sourceId, blot.id, kind === "after");
+    });
+    return node;
+  }
+
+  const cards = new Map(); // blot id -> card element
+
+  function render(kinds) {
+    const root = document.getElementById("workspace");
+    if (!root) return;
+    root.style.display = state.hideBlots ? "none" : "";
+    if (kinds.has("blots")) {
+      cards.clear();
+      root.replaceChildren(...state.blots.map((blot) => {
+        const node = card(blot);
+        cards.set(blot.id, node);
+        return node;
+      }));
+      if (!state.blots.length)
+        root.append(dom.el("p", { class: "empty" }, "No blot yet. Use “Add blots…” or “Sample blot”."));
+    }
+    const redrawImages = ["blots", "image", "display", "exposure"].some((k) => kinds.has(k));
+    for (const blot of state.blots) {
+      const node = cards.get(blot.id);
+      if (!node) continue;
+      node.classList.toggle("selected", blot.id === state.selected);
+      node.classList.toggle("drawing", !!state.tool);
+      node.querySelector(".stage").style.width = `${state.cardWidth}px`;
+      const { wb } = blot.work;
+      const t = blot.session.transform;
+      node.querySelector("[data-t=dim]").textContent =
+        `${wb.w} × ${wb.h}${t.crop ? ", cropped" : ""}${t.rotation_deg ? `, ${t.rotation_deg}°` : ""}` +
+        (blot.raw.bf ? `, + ${blot.bfOrigin ? blot.bfOrigin.name : "brightfield"}` : "");
+      if (redrawImages) drawCanvas(blot, node._blot.canvas);
+      if ((kinds.has("image") || kinds.has("exposure")) && !kinds.has("blots")) {
+        // the value range or the limits changed: rebuild the sliders
+        node.querySelector(".card-controls").replaceWith(exposureControls(blot));
+      }
+      drawOverlay(blot, node._blot.svg);
+    }
+  }
+  app.views.push(render);
+
+  // Delete removes the current lane while the Lanes tab is open.
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape") {
+      const selected = app.blot();
+      if (state.tool) state.tool = null; // stop drawing
+      else if (selected) selected.pending = { crop: null, level: null }; // discard what was drawn
+      app.changed("tool", "panel");
+    }
+    if (ev.key !== "Delete" && ev.key !== "Backspace") return;
+    if (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) return;
+    const blot = app.blot();
+    if (state.tab !== "lanes" || !blot || !blot.session.lanes[state.lane]) return;
+    blot.session.lanes.splice(state.lane, 1);
+    state.lane = Math.min(state.lane, Math.max(blot.session.lanes.length - 1, 0));
+    app.changed("lanes", "panel");
+    ev.preventDefault();
+  });
+})();
