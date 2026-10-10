@@ -40,6 +40,12 @@ no server; the files can also be put on any web host.
   set by hand, or *valley to valley* as in Fiji: each peak is measured above
   the straight line between its two borders, so there the borders decide the
   result.
+- **Peaks**: *Detect* marks the bands of a lane. A peak ends where its flank
+  has flattened (the signal falls at a tenth of the flank's steepest slope or
+  less): at its foot, or at the dip towards a neighbouring hump, whether or
+  not that hump is a peak of its own. A double band is therefore measured as
+  two peaks, or as its first hump only; to measure it as one, drag the border
+  or give both peaks the same number.
 - **Quantify**: one plot per lane. Drag a peak's borders, double-click to add a
   peak, right-click to remove one, Shift + double-click for background anchors.
   The table has one row per lane and one column per peak number. With
@@ -191,8 +197,9 @@ The tests run in Chromium (Chrome, Edge) and in WebKit (Safari's engine).
 
 `test_core.py` runs each core function in the page and compares the result with
 numpy / scipy, or with the reference values recorded in `tests/data`
-(`reference.json`, and `reference.npz` for the long curves). A deliberate change
-to an algorithm needs new reference values.
+(`reference.json`, and `reference.npz` for the long curves). After a deliberate
+change to how peaks are found, `uv run python record_reference.py` records the
+values that depend on it again; look at the difference before committing it.
 `test_ui.py` drives the interface with real mouse and keyboard events.
 `test_library.py` covers the projects in the browser and the library file.
 `uv run python screenshots.py <folder>` writes screenshots of the main views

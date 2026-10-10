@@ -115,46 +115,50 @@
 
   const makePeak = (start, end, apex) => ({ start, end, apex, band_id: 0, quantify: true });
 
+  // Where a peak ends on one side: outwards from the apex (`step` -1 or 1) to
+  // the point where its flank has flattened, that is where the signal falls at
+  // no more than a tenth of the flank's steepest slope. That is the foot of the
+  // peak, and also the dip towards a neighbouring hump. Tails and haze beyond
+  // it are left out, which a border at a fraction of the peak's height is not
+  // able to do. Not further than `limit`, and not up another peak: if the
+  // signal climbs above the apex (the apex was taken on a flank), the border is
+  // the lowest point before that.
+  const FLAT = 0.1;
+  function flankEnd(y, apex, step, limit) {
+    let steepest = 0;
+    let lowest = apex;
+    for (let i = apex + step; step < 0 ? i > limit : i < limit; i += step) {
+      if (y[i] > y[apex]) return lowest;
+      if (y[i] < y[lowest]) lowest = i;
+      const fall = (y[i - step] - y[i + step]) / 2; // per px, going outwards
+      if (fall > steepest) steepest = fall;
+      else if (steepest > 0 && fall <= FLAT * steepest) return i;
+    }
+    return limit;
+  }
+
   // Find bands in a profile. `prominence` is a fraction of the corrected
-  // profile's range. Borders are put where the signal drops to `edgeFrac` of the
-  // peak height, or at the valley towards the neighbouring peak.
+  // profile's range. Each border is put where the flank has flattened, and not
+  // beyond the valley towards the neighbouring peak.
   quant.detectPeaks = function (profile, baseline, options = {}) {
-    const { prominence = 0.05, smooth = 1.5, minWidth = 3, edgeFrac = 0.03 } = options;
+    const { prominence = 0.05, smooth = 1.5, minWidth = 3 } = options;
     const y = corrected(profile, baseline, smooth);
     const span = num.max(y) - num.min(y);
     if (span <= 0) return [];
     const idx = num.findPeaks(y, { prominence: prominence * span, width: minWidth }).peaks;
     return idx.map((apex, k) => {
-      const thr = edgeFrac * y[apex];
-      const lo = k > 0 ? idx[k - 1] : 0;
-      const hi = k + 1 < idx.length ? idx[k + 1] : y.length - 1;
-      let start = -1;
-      for (let i = apex; i >= lo; i--) {
-        if (y[i] <= thr) {
-          start = i;
-          break;
-        }
-      }
-      if (start < 0) start = num.argmin(y, lo, apex + 1);
-      let end = -1;
-      for (let i = apex; i <= hi; i++) {
-        if (y[i] <= thr) {
-          end = i;
-          break;
-        }
-      }
-      if (end < 0) end = num.argmin(y, apex, hi + 1);
-      return makePeak(start, end, apex);
+      const lo = k > 0 ? num.argmin(y, idx[k - 1], apex + 1) : 0;
+      const hi = k + 1 < idx.length ? num.argmin(y, apex, idx[k + 1] + 1) : y.length - 1;
+      return makePeak(Math.min(flankEnd(y, apex, -1, lo), apex - 1), Math.max(flankEnd(y, apex, 1, hi), apex + 1), apex);
     });
   };
 
-  // The peak under `position`, with borders where it meets the background. The
-  // apex is the highest point within `search` px. Each border moves outwards
-  // until the signal has dropped to `edgeFrac` of the peak height, or to the
-  // valley before a neighbouring peak. `limits` keeps the borders inside an
-  // interval. null if there is no signal above the background.
+  // The peak under `position`, with borders where its flanks have flattened.
+  // The apex is the highest point within `search` px. `limits` keeps the
+  // borders inside an interval. null if there is no signal above the
+  // background.
   quant.peakAt = function (profile, baseline, position, options = {}) {
-    const { search = 8, smooth = 1.5, edgeFrac = 0.03, riseFrac = 0.1, limits = null } = options;
+    const { search = 8, smooth = 1.5, limits = null } = options;
     const y = corrected(profile, baseline, smooth);
     const n = y.length;
     let lo = limits ? Math.ceil(limits[0]) : 0;
@@ -165,21 +169,9 @@
     const b = num.clip(num.round(position + search), lo, hi);
     if (b <= a) return null;
     const apex = num.argmax(y, a, b + 1);
-    const height = y[apex];
-    if (height <= 0) return null;
-    const border = (step) => {
-      let i = apex;
-      let lowest = apex;
-      while (lo <= i + step && i + step <= hi) {
-        i += step;
-        if (y[i] < y[lowest]) lowest = i;
-        if (y[i] <= edgeFrac * height) return i;
-        if (y[i] - y[lowest] > riseFrac * height) return lowest;
-      }
-      return lowest;
-    };
-    const start = border(-1);
-    const end = border(1);
+    if (y[apex] <= 0) return null;
+    const start = flankEnd(y, apex, -1, lo);
+    const end = flankEnd(y, apex, 1, hi);
     return end <= start ? null : makePeak(start, end, apex);
   };
 
