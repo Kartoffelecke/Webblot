@@ -3,3 +3,6 @@ tests/uv.lock
 __pycache__/
 .pytest_cache/
 .DS_Store
+# projects and libraries saved while trying the page out
+/*.webblot.json
+/*.webblot.zip

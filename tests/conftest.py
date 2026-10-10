@@ -1,14 +1,14 @@
-"""Shared fixtures: the page under test and napari-blot's Python core as reference."""
+"""Shared fixtures: the page under test, the test images and the reference values."""
 
-import sys
+import json
 from pathlib import Path
 
 import numpy as np
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
-NAPARI_BLOT = ROOT.parent / "napari-blot"
-sys.path.insert(0, str(NAPARI_BLOT / "src"))
+DATA = Path(__file__).resolve().parent / "data"
+REAL_BLOT = DATA / "chemidoc_lc3.tif"
 
 INDEX_URL = (ROOT / "index.html").as_uri()
 
@@ -43,22 +43,80 @@ def call(page, expression, *images, args=None):
     return page.evaluate(script, [[image_arg(i) for i in images], args])
 
 
-@pytest.fixture(scope="session")
-def blot():
-    from napari_blot._sample import make_blot
+def make_blot(shape=(420, 640), n_lanes=8, band_ys=(90, 200, 320), seed=0, gradient=0.15, noise=0.01):
+    """A synthetic blot with known lanes and bands: the image, a brightfield image and the ground truth."""
+    rng = np.random.default_rng(seed)
+    h, w = shape
+    yy, xx = np.mgrid[:h, :w].astype(float)
+    pitch = w / (n_lanes + 1)
+    centers = pitch * (np.arange(n_lanes) + 1)
+    lane_width = 0.7 * pitch
+    sigma_y = 5.0
 
+    volumes = rng.uniform(0.3, 1.0, size=(n_lanes, len(band_ys)))
+    volumes[:, -1] = 0.8  # loading control
+    wb = np.zeros(shape)
+    for i, cx in enumerate(centers):
+        # flat-topped band across the lane
+        across = 1.0 / (1.0 + (np.abs(xx - cx) / (0.42 * lane_width)) ** 8)
+        for j, by in enumerate(band_ys):
+            along = np.exp(-0.5 * ((yy - by) / sigma_y) ** 2) / (sigma_y * np.sqrt(2 * np.pi))
+            wb += volumes[i, j] * along * across * 10
+    wb += gradient * (yy / h) + 0.05
+    wb += rng.normal(0, noise, shape)
+
+    ladder_ys = np.linspace(50, h - 50, 6)
+    bf = np.full(shape, 0.9)
+    across = 1.0 / (1.0 + (np.abs(xx - centers[0]) / (0.42 * lane_width)) ** 8)
+    for ly in ladder_ys:
+        bf -= 0.6 * np.exp(-0.5 * ((yy - ly) / 3.0) ** 2) * across
+    bf += rng.normal(0, noise, shape)
+
+    def to16(a):
+        a = np.clip(a, 0, None)
+        return (a / a.max() * 60000).astype(np.uint16)
+
+    return {
+        "wb": to16(wb),
+        "bf": to16(bf),
+        "centers": centers,
+        "band_ys": np.asarray(band_ys, float),
+        "ladder_ys": ladder_ys,
+    }
+
+
+@pytest.fixture(scope="session")
+def ref():
+    """The recorded numbers the core must reproduce: data/reference.json, and the long curves in data/reference.npz."""
+    values = json.loads((DATA / "reference.json").read_text())
+    with np.load(DATA / "reference.npz") as curves:
+        values.update({key: curves[key] for key in curves.files})
+    return values
+
+
+def checked(pixels, expected):
+    """`pixels`, after making sure it is the image the reference values were recorded for."""
+    assert float(pixels.sum(dtype=np.float64)) == pytest.approx(expected, rel=1e-12), (
+        "the generated test image has changed (another numpy?), so the reference values do not apply"
+    )
+    return pixels
+
+
+@pytest.fixture(scope="session")
+def blot(ref):
     b = make_blot()
+    checked(b["wb"], ref["fingerprint"]["wb"])
+    checked(b["bf"], ref["fingerprint"]["bf"])
     b["img"] = b["wb"].astype(np.float32)
     return b
 
 
 @pytest.fixture(scope="session")
 def real_blot():
-    """The ChemiDoc LC3 blot from napari-blot/data, if it is there."""
-    files = sorted((NAPARI_BLOT / "data").glob("*.tif"))
-    if not files:
-        pytest.skip("no blot in napari-blot/data")
-    return files[0]
+    """A real blot (ChemiDoc, 16-bit TIFF), if it is there."""
+    if not REAL_BLOT.exists():
+        pytest.skip(f"no {REAL_BLOT.name} in tests/data")
+    return REAL_BLOT
 
 
 # ----------------------------------------------------------------- UI helpers
@@ -172,14 +230,13 @@ def ui(app):
 
 
 @pytest.fixture
-def blot_files(tmp_path, blot):
+def blot_files(tmp_path, blot, ref):
     """Two synthetic blots as TIFF files."""
     import tifffile
 
-    from napari_blot._sample import make_blot
-
+    control = checked(make_blot(seed=5)["wb"], ref["fingerprint"]["control"])
     paths = []
-    for name, data in (("target", blot["wb"]), ("control", make_blot(seed=5)["wb"])):
+    for name, data in (("target", blot["wb"]), ("control", control)):
         path = tmp_path / f"{name}.tif"
         tifffile.imwrite(path, data)
         paths.append(path)

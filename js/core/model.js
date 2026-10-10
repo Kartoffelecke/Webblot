@@ -1,11 +1,20 @@
-// The data model: plain objects with the same field names as napari-blot's
-// model.py, so that the two tools stay comparable.
+// The data model: plain objects, saved as they are in a project file.
 (function () {
   "use strict";
   const WB = (window.WB = window.WB || {});
   const model = (WB.model = {});
 
-  model.PROJECT_VERSION = 4;
+  model.PROJECT_VERSION = 7;
+
+  // What a project is known by: its place in the browser's storage and a name
+  // (empty: it goes by the name of its first blot).
+  model.project = () => ({ id: model.newId(), name: "", created: Date.now() });
+
+  // a random name for a project or an image
+  model.newId = function () {
+    const bytes = crypto.getRandomValues(new Uint8Array(8));
+    return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  };
   model.BASELINE_METHODS = ["none", "rolling", "linear", "manual"];
 
   model.baseline = () => ({
@@ -30,7 +39,11 @@
   });
 
   model.figure = () => ({
-    crop: null, // [y0, x0, y1, x1] in the working image, pixel-edge coordinates
+    // The figure shows the whole image, or with `crop_on` only the area `crop`:
+    // [y0, x0, y1, x1] in the working image, pixel-edge coordinates. The area
+    // is kept while it is switched off.
+    crop: null,
+    crop_on: false,
     show_bf: false, // merge the blot's brightfield image (the marker) into the gel
     // { title, values: [one string per lane], collapse }; with `collapse`,
     // neighbouring lanes with the same text share one label
@@ -55,7 +68,8 @@
     mw_unit_position: "each", // "each": after every label, "top": once above them
     font_size: 8,
     gel_width_mm: 60,
-    line_width: 0.5, // points
+    line_width_mm: 0.2,
+    decrowd: false, // move side labels that overlap outwards, each with a longer line
     lossless: true, // the gel keeps its own pixels
     dpi: 300,
     gap_mm: 2,
@@ -74,6 +88,7 @@
       peaks: [],
     }));
     target.figure.crop = model.copy(source.figure.crop);
+    target.figure.crop_on = source.figure.crop_on;
     target.figure.label_rows = model.copy(source.figure.label_rows);
   };
 })();

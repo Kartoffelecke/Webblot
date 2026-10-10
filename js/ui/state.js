@@ -5,14 +5,16 @@
   const { model, processing, lanes, quant, num } = WB;
 
   const state = (WB.state = {
+    project: model.project(),
     blots: [], // in the order of the figure's panels, top first
     selected: null, // id of the blot the side panel works on
     lane: 0, // current lane of the selected blot
     style: model.style(),
     tab: "prepare",
-    tool: null, // "crop" | "level" | "roi" | "figarea" while drawing on a card
+    tool: null, // "crop" | "level" | "roi" while drawing on a card
     cardWidth: 420,
     hideBlots: false,
+    normalize: false, // report each band relative to its largest area among the lanes
   });
   const app = (WB.app = { views: [] });
   let nextId = 1;
@@ -73,6 +75,9 @@
       // shapes drawn on the card that are not applied yet: a crop rectangle
       // [y0, x0, y1, x1] and a line to straighten along [[y, x], [y, x]]
       pending: { crop: null, level: null },
+      // the part of the image the card shows: magnification and the image
+      // pixel in its top left corner. Not saved with the project.
+      view: { zoom: 1, x: 0, y: 0 },
       work: null,
       cache: null,
     };
@@ -164,11 +169,14 @@
     app.changed("blots", "panel");
   };
 
+  // An empty project, a new one.
   app.clear = function () {
+    state.project = model.project();
     state.blots = [];
     state.selected = null;
     state.lane = 0;
     state.style = model.style();
+    state.normalize = false;
     app.changed("blots");
   };
 
@@ -202,6 +210,8 @@
       bf = processing.applyTransform(fitted, t);
       if (!t.bf_contrast_limits) t.bf_contrast_limits = processing.autoContrast(bf, 0.5, 99.5);
     }
+    // another image size: what the card showed is no longer the same place
+    if (blot.work && (blot.work.wb.w !== wb.w || blot.work.wb.h !== wb.h)) blot.view = { zoom: 1, x: 0, y: 0 };
     blot.work = { wb, bf, range: [num.min(wb.data), num.max(wb.data)] };
     blot.work.bfRange = bf ? [num.min(bf.data), num.max(bf.data)] : null;
     if (!t.contrast_limits) t.contrast_limits = processing.autoContrast(wb);
@@ -254,6 +264,46 @@
     blot.pending = { crop: null, level: null };
     app.rework(blot);
     app.changed("lanes", "figure", "panel");
+  };
+
+  const copyOrigin = (o) =>
+    o && { ...o, session: model.copy(o.session), roi: model.copy(o.roi), bfOrigin: copyOrigin(o.bfOrigin) };
+
+  // A new blot showing `box` [y0, x0, y1, x1] (pixel indices of the current
+  // working image) of `blot`, which itself stays as it is. The new blot is what
+  // cropping would have given: the same image file with the same rotation,
+  // brightfield, lanes, peaks and figure settings, cropped to the box. It is
+  // put after `blot` and the blots made from it before. null if the box is empty.
+  app.newFromCrop = function (blot, box) {
+    if (!processing.clipCrop(box, blot.work.wb.w, blot.work.wb.h)) return null;
+    const names = new Set(state.blots.map((b) => b.name));
+    let n = 2;
+    while (names.has(`${blot.name} ${n}`)) n++;
+    const created = makeBlot(`${blot.name} ${n}`, blot.raw.wb, blot.raw.bf, {
+      session: model.copy(blot.session),
+      include: blot.include,
+      labels: false, // the blots that were there keep the lane labels
+      roi: model.copy(blot.roi),
+      bfOrigin: copyOrigin(blot.bfOrigin),
+    });
+    let at = state.blots.indexOf(blot) + 1;
+    while (at < state.blots.length && state.blots[at].raw.wb === blot.raw.wb) at++;
+    state.blots.splice(at, 0, created);
+    app.rework(created);
+    app.setCrop(created, box);
+    app.changed("blots", "panel");
+    return created;
+  };
+
+  // Show only the figure area of a blot in the figure, or the whole image. An
+  // area that was set before comes back; the first time it is a box inside the
+  // image, to be adjusted on the blot.
+  app.setFigureCrop = function (blot, on) {
+    const fig = blot.session.figure;
+    const { w, h } = blot.work.wb;
+    if (on && !fig.crop) fig.crop = [0.1 * h - 0.5, 0.1 * w - 0.5, 0.9 * h - 0.5, 0.9 * w - 0.5].map(Math.round).map((v) => v - 0.5);
+    fig.crop_on = on;
+    app.changed("figure", "panel");
   };
 
   app.copySetup = function (source, target) {

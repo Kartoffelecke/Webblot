@@ -205,11 +205,24 @@
     return { bands, rows };
   };
 
-  quant.tableToCsv = function (bands, rows, sep = ",") {
-    const lines = [["Lane", ...bands.map((b) => `Peak ${b}`)].join(sep)];
-    rows.forEach((row, i) =>
-      lines.push([i + 1, ...row.map((v) => (v === null ? "" : num.formatG(v)))].join(sep))
-    );
+  // The rows of a results table with every band divided by its largest area
+  // among the lanes, so that each column runs up to 1. A band without an area
+  // above zero in any lane has nothing to be compared with and is left empty.
+  quant.normalizeRows = function (rows) {
+    const width = rows.length ? rows[0].length : 0;
+    const top = Array.from({ length: width }, (_, j) =>
+      Math.max(...rows.map((row) => (row[j] === null ? -Infinity : row[j]))));
+    return rows.map((row) => row.map((v, j) => (v === null || !(top[j] > 0) ? null : v / top[j])));
+  };
+
+  // The table as text. Without `headers` it is the numbers only: no title row
+  // and no column of lane numbers.
+  quant.tableToCsv = function (bands, rows, sep = ",", headers = true) {
+    const lines = headers ? [["Lane", ...bands.map((b) => `Peak ${b}`)].join(sep)] : [];
+    rows.forEach((row, i) => {
+      const values = row.map((v) => (v === null ? "" : num.formatG(v)));
+      lines.push((headers ? [i + 1, ...values] : values).join(sep));
+    });
     return lines.join("\n") + "\n";
   };
 })();

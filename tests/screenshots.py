@@ -1,11 +1,11 @@
-"""Screenshots of the main views with the real LC3 blot, for checking by eye."""
+"""Screenshots of the main views with the real blot in data/, for checking by eye."""
 import sys
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
 out = Path(sys.argv[1])
-blot = sorted((Path(__file__).resolve().parents[2] / "napari-blot" / "data").glob("*.tif"))[0]
+blot = Path(__file__).resolve().parent / "data" / "chemidoc_lc3.tif"
 with sync_playwright() as p:
     browser = p.chromium.launch()
     page = browser.new_page(viewport={"width": 1600, "height": 1000})
@@ -26,6 +26,7 @@ with sync_playwright() as p:
                 b.session.lanes = WB.lanes.detect(app.signal(b), { nLanes: 7, roi: b.roi.map((v) => v + 0.5) });
                 b.session.transform.invert_lut = true;
                 b.session.figure.crop = areas[i];
+                b.session.figure.crop_on = true;
                 b.session.figure.band_markers = bands[i].map(([y, text]) => ({ y, text }));
             });
             const first = s.blots[0];

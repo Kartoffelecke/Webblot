@@ -69,30 +69,46 @@
     return bytes;
   }
 
-  // Image as a JSON-friendly object. Whole-number images up to 16 bits (every
-  // file an imager writes) take two bytes per pixel, anything else four.
-  imageio.pack = function (img) {
+  // The name an image goes by in a saved project. An image is never modified
+  // once it has been read, so the key it gets here stays its key.
+  imageio.key = function (img) {
+    if (!img.key) img.key = WB.model.newId();
+    return img.key;
+  };
+
+  // Image as stored in the browser: { w, h, dtype, buffer }. Whole-number
+  // images up to 16 bits (every file an imager writes) take two bytes per
+  // pixel, anything else four.
+  imageio.toBinary = function (img) {
     let integer = true;
     for (let i = 0; i < img.data.length && integer; i++) {
       const v = img.data[i];
       integer = v >= 0 && v <= 65535 && Math.floor(v) === v;
     }
-    const typed = integer ? Uint16Array.from(img.data) : img.data;
-    return {
-      w: img.w,
-      h: img.h,
-      dtype: integer ? "uint16" : "float32",
-      data: toBase64(new Uint8Array(typed.buffer, typed.byteOffset, typed.byteLength)),
-    };
+    const typed = integer ? Uint16Array.from(img.data) : Float32Array.from(img.data);
+    return { w: img.w, h: img.h, dtype: integer ? "uint16" : "float32", buffer: typed.buffer };
   };
 
-  imageio.unpack = function (packed) {
-    const bytes = fromBase64(packed.data);
+  imageio.fromBinary = function (binary) {
     const data =
-      packed.dtype === "uint16"
-        ? Float32Array.from(new Uint16Array(bytes.buffer))
-        : new Float32Array(bytes.buffer);
-    if (data.length !== packed.w * packed.h) throw new Error("The stored image is damaged.");
-    return { w: packed.w, h: packed.h, data };
+      binary.dtype === "uint16"
+        ? Float32Array.from(new Uint16Array(binary.buffer))
+        : new Float32Array(binary.buffer.slice(0));
+    if (data.length !== binary.w * binary.h) throw new Error("The stored image is damaged.");
+    return { w: binary.w, h: binary.h, data };
   };
+
+  // The stored form as a JSON-friendly object for project files, and back.
+  imageio.binaryToPacked = (binary) =>
+    ({ w: binary.w, h: binary.h, dtype: binary.dtype, data: toBase64(new Uint8Array(binary.buffer)) });
+
+  imageio.packedToBinary = function (packed) {
+    const bytes = fromBase64(packed.data);
+    if (bytes.length !== packed.w * packed.h * (packed.dtype === "uint16" ? 2 : 4))
+      throw new Error("The stored image is damaged.");
+    return { w: packed.w, h: packed.h, dtype: packed.dtype, buffer: bytes.buffer };
+  };
+
+  imageio.pack = (img) => imageio.binaryToPacked(imageio.toBinary(img));
+  imageio.unpack = (packed) => imageio.fromBinary(imageio.packedToBinary(packed));
 })();

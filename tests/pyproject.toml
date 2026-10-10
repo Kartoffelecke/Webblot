@@ -1,7 +1,7 @@
 [project]
 name = "web-blot-tests"
 version = "0"
-description = "Browser tests for web_blot; compares the JavaScript core with napari-blot's Python core"
+description = "Browser tests for web_blot"
 requires-python = ">=3.12"
 dependencies = ["pytest", "pytest-playwright", "numpy", "scipy", "tifffile"]
 

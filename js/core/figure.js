@@ -15,6 +15,7 @@
   const escape = (s) =>
     String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   const f = (v) => Number(v.toFixed(3));
+  const lineWidth = (style) => f(style.line_width_mm * MM); // points
 
   let measureContext = null;
   function textWidth(text, fontSize) {
@@ -66,7 +67,7 @@
 
   // [y0, x0, y1, x1] pixel indices of the part of the image shown in the figure
   figure.cropBox = function (session, img) {
-    if (session.figure.crop) {
+    if (session.figure.crop_on && session.figure.crop) {
       // shape corners are pixel-edge coordinates; +0.5 converts to slice indices
       const box = processing.clipCrop(session.figure.crop.map((v) => v + 0.5), img.w, img.h);
       if (box) return box;
@@ -142,7 +143,7 @@
       const edges = [left, ...xs.slice(1).map((x, i) => 0.5 * (x + xs[i])), right];
       const h = 1.7 * fs;
       const pad = 0.5 * fs;
-      const lw = style.line_width;
+      const lw = lineWidth(style);
       const rowCenter = (r) => g.top - (rows.length - r - 0.5) * h;
       const titled = rows.map((row, r) => [r, row.title]).filter(([, title]) => title);
       let outerLeft = left;
@@ -185,7 +186,7 @@
         for (const [a, b, value] of spans(values)) {
           if (!value) continue;
           const lineY = g.top - (offset + 0.1 * fs);
-          canvas.line(xs[a] - 0.9 * half, lineY, xs[b] + 0.9 * half, lineY, style.line_width);
+          canvas.line(xs[a] - 0.9 * half, lineY, xs[b] + 0.9 * half, lineY, lineWidth(style));
           canvas.text(0.5 * (xs[a] + xs[b]), y, value, { size: fs, cls: "lane-label" });
         }
       } else {
@@ -207,32 +208,58 @@
     }
   }
 
-  // Tick plus text outside the gel for every marker inside the crop. `header`
-  // (the MW unit) is written once above the topmost label; with `blockedAbove`
-  // it goes below the lowest label when it would not fit under the gel's top.
-  function markers(canvas, list, side, style, g, { suffix = "", header = "", blockedAbove = false, cls }) {
+  // Line plus text outside the gel for every marker inside the crop, for all
+  // marker sets on one side of the gel: [{ list, suffix, header, blockedAbove,
+  // cls }]. `header` (the MW unit) is written once above the topmost label of
+  // its set; with `blockedAbove` it goes below the lowest label when it would
+  // not fit under the gel's top.
+  //
+  // With `style.decrowd`, a label that would overlap another one is written
+  // further out, in the next column of labels that has room at its height, and
+  // its line is drawn that much longer.
+  function markers(canvas, sets, side, style, g) {
     const fs = style.font_size;
     const [y0, , y1] = g.box;
-    const inside = list.filter((m) => m.y >= y0 - 0.5 && m.y <= y1 - 0.5);
-    if (!inside.length) return;
     const left = side === "left";
     const edge = left ? 0 : g.width;
     const sign = left ? -1 : 1;
     const tick = 0.5 * fs;
-    const textX = edge + sign * (tick + 0.3 * fs);
+    const gap = 0.3 * fs; // between a line and its text
     const anchor = left ? "end" : "start";
-    if (header) {
-      const gap = 1.4 * fs;
-      const ys = inside.map((m) => g.y(m.y));
-      const first = Math.min(...ys);
-      const above = !blockedAbove || first - g.top >= gap + 0.6 * fs;
-      canvas.text(textX, above ? first - gap : Math.max(...ys) + gap, header, { size: fs, anchor, valign: "center", cls: "mw-unit" });
+    const entries = [];
+    for (const { list, suffix = "", header = "", blockedAbove = false, cls } of sets) {
+      const inside = list.filter((m) => m.y >= y0 - 0.5 && m.y <= y1 - 0.5);
+      if (!inside.length) continue;
+      if (header) {
+        const above = 1.4 * fs;
+        const ys = inside.map((m) => g.y(m.y));
+        const first = Math.min(...ys);
+        const fits = !blockedAbove || first - g.top >= above + 0.6 * fs;
+        canvas.text(edge + sign * (tick + gap), fits ? first - above : Math.max(...ys) + above, header,
+          { size: fs, anchor, valign: "center", cls: "mw-unit" });
+      }
+      for (const m of inside)
+        entries.push({ y: g.y(m.y), label: m.text ? `${m.text}${suffix}` : "", cls, column: 0 });
     }
-    for (const m of inside) {
-      const y = g.y(m.y);
-      const label = m.text ? `${m.text}${suffix}` : "";
-      if (label) canvas.text(textX, y, label, { size: fs, anchor, valign: "center", cls });
-      canvas.line(edge, y, edge + sign * tick, y, style.line_width);
+    if (style.decrowd) {
+      const taken = []; // per column, the heights that have a label
+      const labelled = entries.filter((e) => e.label).sort((a, b) => a.y - b.y);
+      for (const entry of labelled) {
+        let c = 0;
+        while (taken[c] && taken[c].some((y) => Math.abs(y - entry.y) < 1.05 * fs)) c++;
+        if (!taken[c]) taken[c] = [];
+        taken[c].push(entry.y);
+        entry.column = c;
+      }
+    }
+    // where the text of each column starts, measured from the gel's edge
+    const widest = [];
+    for (const e of entries) widest[e.column] = Math.max(widest[e.column] || 0, textWidth(e.label, fs));
+    const start = [tick + gap];
+    for (let c = 1; c < widest.length; c++) start[c] = start[c - 1] + widest[c - 1] + 2 * gap;
+    for (const e of entries) {
+      if (e.label) canvas.text(edge + sign * start[e.column], e.y, e.label, { size: fs, anchor, valign: "center", cls: e.cls });
+      canvas.line(edge, e.y, edge + sign * (start[e.column] - gap), e.y, lineWidth(style));
     }
   }
 
@@ -265,24 +292,31 @@
     if (withImage) {
       // the pixels are embedded as they are and scaled by the viewer, never resampled
       g.pixels = figure.cropCanvas(panel, g.box);
+      // and grouped with their border, so that the two are one object in a drawing program
       canvas.items.push(
-        `<image x="0" y="${f(g.top)}" width="${f(g.width)}" height="${f(g.height)}" preserveAspectRatio="none" image-rendering="pixelated" style="image-rendering:pixelated" href="${g.pixels.toDataURL("image/png")}"/>`
-      );
-      canvas.items.push(
-        `<rect class="gel-border" x="0" y="${f(g.top)}" width="${f(g.width)}" height="${f(g.height)}" fill="none" stroke="#000" stroke-width="${style.line_width}"/>`
+        `<g class="gel">` +
+        `<image x="0" y="${f(g.top)}" width="${f(g.width)}" height="${f(g.height)}" preserveAspectRatio="none" image-rendering="pixelated" style="image-rendering:pixelated" href="${g.pixels.toDataURL("image/png")}"/>` +
+        `<rect class="gel-border" x="0" y="${f(g.top)}" width="${f(g.width)}" height="${f(g.height)}" fill="none" stroke="#000" stroke-width="${lineWidth(style)}"/>` +
+        `</g>`
       );
     }
     canvas.grow(0, g.top, g.width, g.top + g.height);
     if (panel.showLabels) laneLabels(canvas, panel, style, g);
     const unitOnTop = style.mw_unit_position === "top";
-    markers(canvas, fig.mw_markers, fig.mw_side, style, g, {
-      suffix: unitOnTop ? "" : style.mw_unit,
-      header: unitOnTop ? style.mw_unit.trim() : "",
-      // row titles sit above the gel's left corner
-      blockedAbove: panel.showLabels && fig.mw_side === "left" && fig.label_rows.some((r) => r.title),
-      cls: "mw-label",
-    });
-    markers(canvas, fig.band_markers, fig.band_side, style, g, { cls: "band-label" });
+    const sets = [
+      {
+        list: fig.mw_markers,
+        side: fig.mw_side,
+        suffix: unitOnTop ? "" : style.mw_unit,
+        header: unitOnTop ? style.mw_unit.trim() : "",
+        // row titles sit above the gel's left corner
+        blockedAbove: panel.showLabels && fig.mw_side === "left" && fig.label_rows.some((r) => r.title),
+        cls: "mw-label",
+      },
+      { list: fig.band_markers, side: fig.band_side, cls: "band-label" },
+    ];
+    // markers on the same side are laid out together
+    for (const side of ["left", "right"]) markers(canvas, sets.filter((s) => s.side === side), side, style, g);
     return g;
   }
 

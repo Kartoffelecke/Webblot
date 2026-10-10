@@ -59,6 +59,99 @@
     canvas.getContext("2d").putImageData(image, 0, 0);
   }
 
+  // --------------------------------------------------------------------- zoom
+
+  const ZOOM_STEP = 1.5;
+
+  // at most so far in that 8 image pixels fill the width of the card
+  const maxZoom = (blot) => Math.max(blot.work.wb.w / 8, 1);
+
+  // Lay out a card for its blot's view: the canvas is enlarged and shifted
+  // inside the stage, which cuts off the rest; the overlay shows the same part.
+  function applyView(blot, node) {
+    const { w, h } = blot.work.wb;
+    const { zoom, x, y } = blot.view;
+    const { canvas, svg } = node._blot;
+    const stage = canvas.parentNode;
+    stage.style.aspectRatio = `${w} / ${h}`;
+    stage.classList.toggle("zoomed", zoom > 1);
+    canvas.style.width = `${zoom * 100}%`;
+    canvas.style.left = `${(-x / w) * zoom * 100}%`;
+    canvas.style.top = `${(-y / h) * zoom * 100}%`;
+    svg.setAttribute("viewBox", `${x - 0.5} ${y - 0.5} ${w / zoom} ${h / zoom}`);
+    const reset = node.querySelector("[data-t=zoom-reset]");
+    reset.textContent = `${Math.round(zoom * 100)}%`;
+    reset.disabled = zoom === 1;
+    node.querySelector("[data-t=zoom-out]").disabled = zoom === 1;
+    node.querySelector("[data-t=zoom-in]").disabled = zoom >= maxZoom(blot);
+  }
+
+  // Show another part of a blot: `zoom` is the magnification, (x, y) the image
+  // pixel in the top left corner of the card. The view stays inside the image.
+  function setView(blot, zoom, x, y) {
+    const { w, h } = blot.work.wb;
+    zoom = num.clip(zoom, 1, maxZoom(blot));
+    if (zoom < 1.01) zoom = 1;
+    blot.view = { zoom, x: num.clip(x, 0, w - w / zoom), y: num.clip(y, 0, h - h / zoom) };
+    const node = cards.get(blot.id);
+    if (!node) return;
+    applyView(blot, node);
+    drawOverlay(blot, node._blot.svg);
+  }
+
+  // Magnify by `factor`, keeping the image point [y, x] where it is on the
+  // screen (the centre of the view if no point is given).
+  workspace.zoom = function (blot, factor, point = null) {
+    const { w, h } = blot.work.wb;
+    const { zoom: old, x, y } = blot.view;
+    const [py, px] = point || [y + h / old / 2, x + w / old / 2];
+    const zoom = num.clip(old * factor, 1, maxZoom(blot));
+    setView(blot, zoom, px - ((px - x) * old) / zoom, py - ((py - y) * old) / zoom);
+  };
+
+  workspace.resetZoom = (blot) => setView(blot, 1, 0, 0);
+
+  // Move the view by a distance on the screen; false if it was at the edge already.
+  function panBy(blot, svg, dx, dy) {
+    const { zoom, x, y } = blot.view;
+    const perPixel = blot.work.wb.w / zoom / svg.getBoundingClientRect().width;
+    setView(blot, zoom, x + dx * perPixel, y + dy * perPixel);
+    return blot.view.x !== x || blot.view.y !== y;
+  }
+
+  // Ctrl or ⌘ + wheel (and pinching on a trackpad) zooms at the pointer. On a
+  // zoomed blot the wheel alone moves the view, until it reaches the edge.
+  function onWheel(blot, svg, event) {
+    if (event.ctrlKey || event.metaKey) {
+      event.preventDefault();
+      const [py, px] = workspace.toImage(svg, event);
+      const { w, h } = blot.work.wb;
+      workspace.zoom(blot, Math.exp(-num.clip(event.deltaY, -30, 30) * 0.01),
+        [num.clip(py, -0.5, h - 0.5), num.clip(px, -0.5, w - 0.5)]);
+    } else if (blot.view.zoom > 1) {
+      const scale = event.deltaMode === 1 ? 16 : 1; // lines or pixels
+      if (panBy(blot, svg, event.deltaX * scale, event.deltaY * scale)) event.preventDefault();
+    }
+  }
+
+  // Dragging the image itself, not a shape on it, moves the view of a zoomed blot.
+  function startPan(blot, svg, event) {
+    event.preventDefault();
+    let last = [event.clientX, event.clientY];
+    const move = (e) => {
+      panBy(blot, svg, last[0] - e.clientX, last[1] - e.clientY);
+      last = [e.clientX, e.clientY];
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      svg.classList.remove("panning");
+    };
+    svg.classList.add("panning");
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
+
   // ------------------------------------------------------------------ overlay
 
   // The shape being drawn with a tool right now: { blotId, tool, start, end }.
@@ -69,15 +162,15 @@
 
   function figureBox(blot) {
     const { w, h } = blot.work.wb;
-    return blot.session.figure.crop || [-0.5, -0.5, h - 0.5, w - 0.5];
+    const fig = blot.session.figure;
+    return (fig.crop_on && fig.crop) || [-0.5, -0.5, h - 0.5, w - 0.5];
   }
   workspace.figureBox = figureBox;
 
   function drawOverlay(blot, svg) {
-    const { w, h } = blot.work.wb;
-    svg.setAttribute("viewBox", `-0.5 -0.5 ${w} ${h}`);
+    const { w } = blot.work.wb;
     svg.replaceChildren();
-    const px = w / state.cardWidth; // image pixels per screen pixel
+    const px = w / blot.view.zoom / state.cardWidth; // image pixels per screen pixel
     const isSelected = blot.id === state.selected;
     const add = (tag, attrs, ...kids) => {
       const node = dom.svg(tag, { "vector-effect": "non-scaling-stroke", ...attrs }, ...kids);
@@ -225,27 +318,45 @@
     // figure area and markers
     const fig = blot.session.figure;
     if (state.tab === "figure") {
-      const [y0, x0, y1, x1] = figureBox(blot);
-      if (fig.crop)
+      const [y0, , y1] = figureBox(blot);
+      if (fig.crop && fig.crop_on)
         editableRect(() => fig.crop, (box) => (fig.crop = box), {
           t: "figure-area", color: COLORS.figure, done: () => app.changed("figure"),
         });
+      else if (fig.crop) {
+        // switched off: where the area was, in case it is switched on again
+        const [cy0, cx0, cy1, cx1] = fig.crop;
+        add("rect", {
+          x: cx0, y: cy0, width: cx1 - cx0, height: cy1 - cy0, class: "note", "data-t": "figure-area-off",
+          fill: "rgba(140, 140, 140, 0.18)", stroke: "#9a9a9a", "stroke-width": 1.5, "stroke-dasharray": "5 4", opacity: 0.7,
+        });
+      }
+      // Markers are shown at the side of the card (of the view, on a zoomed
+      // blot) with a thin line across it, and can be grabbed anywhere along
+      // that line. Only their height matters; in the figure they stand beside
+      // the figure area.
+      const viewLeft = blot.view.x - 0.5;
+      const viewRight = viewLeft + w / blot.view.zoom;
       const markerSet = (markers, side, color, t) => {
-        const edge = side === "left" ? x0 : x1;
+        const edge = side === "left" ? viewLeft : viewRight;
         const dir = side === "left" ? 1 : -1;
         markers.forEach((m, k) => {
-          const inside = m.y >= y0 && m.y <= y1;
+          const opacity = m.y >= y0 && m.y <= y1 ? 1 : 0.4; // outside the figure area
           add("line", {
-            x1: edge, y1: m.y, x2: edge + dir * 0.12 * (x1 - x0), y2: m.y, class: "note",
-            stroke: color, "stroke-width": 2, opacity: inside ? 1 : 0.4,
+            x1: viewLeft, y1: m.y, x2: viewRight, y2: m.y, class: "note", "data-t": `${t}-guide`,
+            stroke: color, "stroke-width": 1, "stroke-dasharray": "2 5", opacity: 0.6 * opacity,
+          });
+          add("line", {
+            x1: edge, y1: m.y, x2: edge + dir * 16 * px, y2: m.y, class: "note", "data-t": `${t}-tick`,
+            stroke: color, "stroke-width": 3, opacity,
           });
           add("text", {
-            x: edge + dir * 0.13 * (x1 - x0), y: m.y + 4 * px, "font-size": 12 * px, fill: color,
-            class: "note", "text-anchor": side === "left" ? "start" : "end",
+            x: edge + dir * 20 * px, y: m.y - 4 * px, "font-size": 12 * px, fill: color, opacity,
+            class: "note marker-text", "text-anchor": side === "left" ? "start" : "end",
           }, m.text);
           // a wide invisible line to grab
           add("line", {
-            x1: edge, y1: m.y, x2: edge + dir * 0.2 * (x1 - x0), y2: m.y, "data-t": t, "data-index": k,
+            x1: viewLeft, y1: m.y, x2: viewRight, y2: m.y, "data-t": t, "data-index": k,
             stroke: "transparent", "stroke-width": 12, style: "cursor:ns-resize",
             onpointerdown: (ev) => {
               if (state.tool) return;
@@ -263,6 +374,8 @@
       };
       markerSet(fig.mw_markers, fig.mw_side, COLORS.mw, "mw-marker");
       markerSet(fig.band_markers, fig.band_side, COLORS.band, "band-marker");
+      // the corners of the figure area stay on top of the markers
+      svg.querySelectorAll("[data-t=figure-area-corner]").forEach((corner) => svg.append(corner));
     }
   
     // shapes drawn in the Prepare step, waiting to be applied
@@ -334,10 +447,14 @@
     } else if (tool === "roi") {
       blot.roi = box;
       app.changed("lanes");
-    } else if (tool === "figarea") {
-      blot.session.figure.crop = box;
-      app.changed("figure");
     }
+  };
+
+  // The drawn area becomes a blot of its own; this blot and the rectangle stay,
+  // so that the next area can be taken from the same image.
+  workspace.newFromCrop = function (blot) {
+    if (!blot.pending.crop) return;
+    app.newFromCrop(blot, blot.pending.crop.map((v) => v + 0.5));
   };
 
   workspace.applyCrop = function (blot) {
@@ -417,7 +534,9 @@
     const svg = dom.svg("svg", { class: "overlay", "data-t": "overlay", preserveAspectRatio: "none" });
     svg.addEventListener("pointerdown", (ev) => {
       if (state.tool) startTool(blot, svg, ev);
+      else if (ev.target === svg && blot.view.zoom > 1 && ev.button === 0) startPan(blot, svg, ev);
     });
+    svg.addEventListener("wheel", (ev) => onWheel(blot, svg, ev), { passive: false });
     const node = dom.el("div", {
         class: "card", "data-t": "card", "data-id": blot.id,
         onpointerdown: () => { if (state.selected !== blot.id) app.select(blot.id); },
@@ -437,6 +556,11 @@
           app.changed("panel");
         }, { class: "name" }),
         dom.el("span", { class: "dim", "data-t": "dim" }),
+        dom.el("span", { class: "zoom" },
+          dom.button("−", "zoom-out", () => workspace.zoom(blot, 1 / ZOOM_STEP), "Zoom out"),
+          dom.button("100%", "zoom-reset", () => workspace.resetZoom(blot), "Show the whole blot again"),
+          dom.button("+", "zoom-in", () => workspace.zoom(blot, ZOOM_STEP),
+            "Zoom in. Also: Ctrl or ⌘ + wheel, or pinch, zooms at the pointer; on a zoomed blot the wheel, or dragging the image, moves it.")),
         dom.button("↑", "blot-up", () => app.moveBlot(blot.id, -1), "Move up in the figure"),
         dom.button("↓", "blot-down", () => app.moveBlot(blot.id, 1), "Move down in the figure"),
         dom.button("×", "blot-remove", () => {
@@ -507,6 +631,7 @@
         `${wb.w} × ${wb.h}${t.crop ? ", cropped" : ""}${t.rotation_deg ? `, ${t.rotation_deg}°` : ""}` +
         (blot.raw.bf ? `, + ${blot.bfOrigin ? blot.bfOrigin.name : "brightfield"}` : "");
       if (redrawImages) drawCanvas(blot, node._blot.canvas);
+      applyView(blot, node);
       if ((kinds.has("image") || kinds.has("exposure")) && !kinds.has("blots")) {
         // the value range or the limits changed: rebuild the sliders
         node.querySelector(".card-controls").replaceWith(exposureControls(blot));

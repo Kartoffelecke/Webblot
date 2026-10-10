@@ -1,4 +1,4 @@
-// Numerical helpers that mirror the numpy / scipy functions used by napari-blot.
+// Numerical helpers that mirror numpy / scipy functions of the same names.
 // Everything works on plain arrays or typed arrays of numbers.
 (function () {
   "use strict";

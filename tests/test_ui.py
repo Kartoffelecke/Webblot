@@ -10,17 +10,10 @@ import pytest
 import tifffile
 from conftest import INDEX_URL
 
-from napari_blot import lanes, quant
-from napari_blot.model import Lane
-
 
 def png_size(data: bytes):
     assert data[:8] == b"\x89PNG\r\n\x1a\n"
     return struct.unpack(">II", data[16:24])
-
-
-def py_lane(d):
-    return Lane(d["x_center"], d["y0"], d["y1"], d["width"], d["tilt_deg"])
 
 
 def test_opens_from_the_file_system_with_a_sample(ui):
@@ -136,14 +129,14 @@ def test_rotate_straighten_and_crop(ui, tmp_path):
     assert ui.state("b.session.transform.crop") is None
 
 
-def test_lanes_detect_and_edit_with_the_mouse(ui, blot_files, blot):
+def test_lanes_detect_and_edit_with_the_mouse(ui, blot_files, ref):
     ui.add_files(blot_files[0])
     ui.tab("lanes")
     ui.set("lane-count", 8)
     ui.click("detect-lanes")
     ui.flush()
     centers = ui.state("b.session.lanes.map((l) => l.x_center)")
-    assert centers == pytest.approx([ln.x_center for ln in lanes.detect_lanes(blot["img"], n_lanes=8)], abs=1e-6)
+    assert centers == pytest.approx(ref["lane_detection"][1]["centers"], abs=1e-6)
     assert ui.page.locator("[data-t=lane]").count() == 8
 
     # drag lane 3 to the right
@@ -191,8 +184,9 @@ def test_lanes_detect_and_edit_with_the_mouse(ui, blot_files, blot):
     ui.click("detect-lanes")
     ui.flush()
     got = ui.state("b.session.lanes.map((l) => [l.x_center, l.y0, l.y1])")
-    expected = lanes.detect_lanes(blot["img"], n_lanes=7, roi=tuple(v + 0.5 for v in roi), method="even")
-    assert np.allclose(got, [[ln.x_center, ln.y0, ln.y1] for ln in expected], atol=1e-6)
+    # the same as the core gives for the drawn area, in pixel-edge coordinates
+    expected = ui.state('WB.lanes.detect(WB.app.signal(b), { nLanes: 7, roi: b.roi.map((v) => v + 0.5), method: "even" }).map((l) => [l.x_center, l.y0, l.y1])')
+    assert np.allclose(got, expected, atol=1e-6)
 
 
 @pytest.fixture
@@ -207,20 +201,11 @@ def quantified(ui, blot_files):
     return ui
 
 
-def test_quantify_table_matches_python(quantified, blot):
+def test_quantify_table_matches_the_reference(quantified, ref):
     ui = quantified
     assert ui.page.locator("svg.plot").count() == 8
     assert ui.state("b.session.lanes.map((l) => l.peaks.length)") == [3] * 8
-    found = lanes.detect_lanes(blot["img"], n_lanes=8)
-    profiles, bases = [], []
-    for lane in found:
-        profile = lanes.extract_profile(blot["img"], lane)
-        base = quant.compute_baseline(profile, lane.baseline)
-        lane.peaks = quant.detect_peaks(profile, base)
-        quant.number_peaks(lane)
-        profiles.append(profile)
-        bases.append(base)
-    bands, rows = quant.results_table(found, profiles, bases)
+    bands, rows = ref["pipeline_table"]["bands"], ref["pipeline_table"]["rows"]
     got = ui.state("WB.app.results(b)")
     assert got["bands"] == bands
     assert np.allclose(got["rows"], rows, rtol=1e-3)
@@ -366,9 +351,14 @@ def test_figure_labels_markers_and_panels(figured):
     page = ui.page
     ui.select_blot(0)
     # figure area drawn on the first blot's card: a strip around the top band
-    ui.click("tool-figarea")
+    assert ui.state("[b.session.figure.crop, b.session.figure.crop_on]") == [None, False] and page.locator("[data-t=figure-area]").count() == 0
+    ui.t("figure-crop").check()
     ui.flush()
-    ui.drag_on_card(0, (60, 20), (120, 620))
+    # a box appears inside the image, to be adjusted by its corners
+    assert ui.state("[b.session.figure.crop, b.session.figure.crop_on]") == [[41.5, 63.5, 377.5, 575.5], True]
+    assert page.locator("[data-t=figure-area]").count() == 1
+    ui.drag_on_card(0, (41.5, 63.5), (60, 20))
+    ui.drag_on_card(0, (377.5, 575.5), (120, 620))
     assert ui.state("b.session.figure.crop") == pytest.approx([60, 20, 120, 620], abs=3)
 
     # label rows: one collapsing identical neighbours, and a titled one
@@ -414,9 +404,10 @@ def test_figure_labels_markers_and_panels(figured):
 
     # second blot: its own strip and band marker, no labels of its own
     ui.select_blot(1)
-    ui.click("tool-figarea")
+    ui.t("figure-crop").check()
     ui.flush()
-    ui.drag_on_card(1, (285, 20), (355, 620))
+    ui.drag_on_card(1, (377.5, 575.5), (355, 620))
+    ui.drag_on_card(1, (41.5, 63.5), (285, 20))
     ui.click("band-add")
     ui.flush()
     ui.set("band-text", "GAPDH")
@@ -441,7 +432,7 @@ def test_figure_labels_markers_and_panels(figured):
     assert boxes[1]["y"] < gapdh["y"] + gapdh["height"] / 2 < boxes[1]["y"] + boxes[1]["height"]
     assert gapdh["x"] > boxes[1]["x"] + boxes[1]["width"]
     # all strokes use the line width
-    assert set(page.evaluate("[...document.querySelectorAll('[data-t=preview] svg line, [data-t=preview] svg rect')].map((e) => e.getAttribute('stroke-width'))")) == {"0.5"}
+    assert set(page.evaluate("[...document.querySelectorAll('[data-t=preview] svg line, [data-t=preview] svg rect')].map((e) => e.getAttribute('stroke-width'))")) == {"0.567"}  # 0.2 mm in points
 
     # style: table labels, unit once, line width; panel order and visibility
     ui.select_blot(0)
@@ -450,7 +441,7 @@ def test_figure_labels_markers_and_panels(figured):
     ui.set("line-width", 1)
     texts = figure_texts(ui)
     assert texts.count("kDa") == 1 and "70" in texts and "70 kDa" not in texts and texts.count("WT") == 1
-    assert set(page.evaluate("[...document.querySelectorAll('[data-t=preview] svg line')].map((e) => e.getAttribute('stroke-width'))")) == {"1"}
+    assert set(page.evaluate("[...document.querySelectorAll('[data-t=preview] svg line')].map((e) => e.getAttribute('stroke-width'))")) == {"2.835"}
     ui.click("panel-down", 0)
     ui.flush()
     assert ui.state("s.blots.map((b) => b.name)") == ["control", "target"]
@@ -493,7 +484,7 @@ def test_rotated_labels_stay_above_the_gel(figured):
 def test_export_keeps_the_image_pixels(figured, blot):
     ui = figured
     ui.select_blot(0)
-    ui.state("(b.session.figure.crop = [49.5, 99.5, 249.5, 499.5], WB.app.changed('figure'))")  # 200 x 400 px
+    ui.state("(b.session.figure.crop_on = true, b.session.figure.crop = [49.5, 99.5, 249.5, 499.5], WB.app.changed('figure'))")  # 200 x 400 px
     ui.t("panel-include", 1).uncheck()
     ui.flush()
 
@@ -592,7 +583,7 @@ def test_project_file_restores_everything(figured, tmp_path):
     path = tmp_path / saved.suggested_filename
     saved.save_as(path)
     stored = json.loads(path.read_text())
-    assert stored["app"] == "web_blot" and len(stored["blots"]) == 2 and stored["blots"][0]["wb"]["dtype"] == "uint16"
+    assert stored["app"] == "web_blot" and len(stored["blots"]) == 2 and stored["images"][stored["blots"][0]["wb"]]["dtype"] == "uint16"
 
     # a fresh page
     ui.page.goto(INDEX_URL)
@@ -668,7 +659,7 @@ def test_drawn_shapes_are_visible_adjustable_and_applied_on_request(ui, blot_fil
 
     # every tool shows its shape while it is being drawn, also on a card that
     # was not the selected one (selecting it redraws the card)
-    for tab, tool in (("prepare", "tool-crop"), ("prepare", "tool-level"), ("lanes", "tool-roi"), ("figure", "tool-figarea")):
+    for tab, tool in (("prepare", "tool-crop"), ("prepare", "tool-level"), ("lanes", "tool-roi")):
         ui.select_blot(1)
         ui.tab(tab)
         ui.click(tool)
@@ -948,7 +939,7 @@ def test_blots_are_reordered_and_merged_by_dragging(ui, blot_files, blot, tmp_pa
 def test_project_files_of_another_version_are_refused(ui):
     ui.click("add-sample")
     ui.flush()
-    other = ui.state("(() => { const d = WB.project.serialize(); d.version -= 1; return JSON.stringify(d); })()")
+    other = ui.state("(() => { const d = WB.project.serialize(); d.version += 1; return JSON.stringify(d); })()")
     message = ui.page.evaluate("(text) => { try { WB.project.load(JSON.parse(text)); return null; } catch (e) { return e.message; } }", other)
     assert "another version" in message
     assert ui.state("s.blots.length") == 1  # what was open is untouched
@@ -1065,7 +1056,7 @@ def test_brightfield_can_be_part_of_the_figure(ui, blot_files, blot, tmp_path):
     page.locator("[data-t=card] [data-t=invert]").check()
     ui.flush()
     assert figure_pixel(*ladder) == canvas_pixel(ui, *ladder) < 120  # dark marker on a light gel
-    ui.state("(b.session.figure.crop = [99.5, 9.5, 299.5, 399.5], WB.app.changed('figure'))")
+    ui.state("(b.session.figure.crop_on = true, b.session.figure.crop = [99.5, 9.5, 299.5, 399.5], WB.app.changed('figure'))")
     ui.flush()
     assert figure_pixel(*ladder) == canvas_pixel(ui, *ladder)
     # hiding the brightfield on the card does not take it out of the figure
@@ -1142,3 +1133,535 @@ def test_collapse_identical_merges_neighbouring_labels(figured):
     ui.state("WB.project.load(JSON.parse(JSON.stringify(WB.project.serialize())))")
     ui.flush()
     assert ui.state("JSON.stringify(WB.project.serialize())") == saved
+
+
+def test_zoom_and_pan_inside_a_blot(ui, blot_files):
+    ui.add_files(*blot_files)
+    card = ui.page.locator("[data-t=card]").nth(1)
+    stage = ui.rect(card.locator(".stage"))
+    assert ui.state("b.view") == {"zoom": 1, "x": 0, "y": 0}
+    assert not card.locator("[data-t=zoom-reset]").is_enabled() and not card.locator("[data-t=zoom-out]").is_enabled()
+
+    # the button zooms about the centre; the card keeps its size and only this blot is zoomed
+    card.locator("[data-t=zoom-in]").click()
+    assert ui.state("b.view") == pytest.approx({"zoom": 1.5, "x": 640 / 6, "y": 420 / 6})
+    assert ui.state("s.blots[0].view.zoom") == 1
+    assert ui.rect(card.locator(".stage")) == pytest.approx(stage)
+    assert ui.rect(card.locator("canvas"))["width"] == pytest.approx(1.5 * stage["width"], abs=0.5)
+    assert card.locator("[data-t=zoom-reset]").inner_text() == "150%"
+    centre = [stage["x"] + stage["width"] / 2, stage["y"] + stage["height"] / 2]
+    assert ui.on_card(1, 209.5, 319.5) == pytest.approx(centre, abs=0.5)
+    # the image and the overlay show the same place
+    canvas = ui.rect(card.locator("canvas"))
+    assert [canvas["x"] + 320 / 640 * canvas["width"], canvas["y"] + 210 / 420 * canvas["height"]] == pytest.approx(centre, abs=0.5)
+
+    # Ctrl + wheel zooms at the pointer: the image point under it stays there
+    point = ui.on_card(1, 100, 200)
+    ui.page.mouse.move(*point)
+    ui.page.keyboard.down("Control")
+    ui.page.mouse.wheel(0, -100)
+    ui.page.keyboard.up("Control")
+    ui.page.wait_for_function("WB.app.blot().view.zoom > 1.6")
+    assert ui.on_card(1, 100, 200) == pytest.approx(point, abs=0.5)
+
+    # the wheel alone moves the view, and so does dragging the image
+    x, y = ui.state("[b.view.x, b.view.y]")
+    ui.page.mouse.wheel(0, 40)
+    ui.page.wait_for_function(f"WB.app.blot().view.y > {y}")
+    y = ui.state("b.view.y")
+    ui.drag(centre, [centre[0] + 30, centre[1] + 20])
+    assert ui.state("[b.view.x, b.view.y]") == pytest.approx([x - 30 * ui.state("640 / b.view.zoom") / stage["width"], y - 20 * ui.state("420 / b.view.zoom") / stage["height"]], abs=0.5)
+    # the view stays inside the image
+    ui.page.mouse.move(centre[0], centre[1])
+    ui.page.mouse.wheel(-5000, -5000)
+    ui.page.wait_for_function("WB.app.blot().view.y === 0")
+    assert ui.state("[b.view.x, b.view.y]") == [0, 0]
+
+    # drawing on a zoomed blot lands on the image pixels under the pointer
+    view = ui.state("b.view")
+    ui.click("tool-crop")
+    ui.flush()
+    ui.drag_on_card(1, (30, 40), (180, 260))
+    assert ui.state("b.pending.crop") == pytest.approx([30, 40, 180, 260], abs=2)
+    assert ui.state("b.view") == view and view["zoom"] > 1.6  # drawing does not move the view
+
+    # the % button shows everything again; another image size also does
+    card.locator("[data-t=zoom-reset]").click()
+    assert ui.state("b.view") == {"zoom": 1, "x": 0, "y": 0}
+    assert ui.rect(card.locator("canvas")) == pytest.approx(stage, abs=0.5)
+    card.locator("[data-t=zoom-in]").click()
+    ui.click("crop-apply")
+    ui.flush()
+    assert ui.state("[b.work.wb.w, b.view.zoom]") == [220, 1]
+    # zooming is not something a blot is measured or saved with
+    assert "view" not in json.dumps(ui.page.evaluate("WB.project.serialize().blots.map((b) => Object.keys(b))"))
+
+
+def test_new_blot_from_a_crop_area(ui, blot_files):
+    ui.add_files(*blot_files)
+    ui.select_blot(0)
+    ui.tab("lanes")
+    ui.set("lane-count", 8)
+    ui.click("detect-lanes")
+    ui.tab("prepare")
+    assert not ui.t("crop-new").is_enabled()
+    ui.click("tool-crop")
+    ui.flush()
+    ui.drag_on_card(0, (50, 60), (150, 600))
+    ui.click("crop-new")
+    ui.flush()
+
+    # the area is a blot of its own, right after the blot it was taken from, which is unchanged
+    assert ui.state("s.blots.map((b) => b.name)") == ["target", "target 2", "control"]
+    assert ui.page.locator("[data-t=card]").count() == 3
+    assert ui.state("[b.name, b.session.transform.crop, b.work.wb.w, b.work.wb.h]") == ["target", None, 640, 420]
+    crop = ui.state("s.blots[1].session.transform.crop")
+    assert crop == pytest.approx([50, 60, 150, 600], abs=3)
+    assert ui.state("[s.blots[1].work.wb.w, s.blots[1].work.wb.h]") == [crop[3] - crop[1], crop[2] - crop[0]]
+    # it shows the pixels of the area, and has the lanes on the same pixels
+    assert ui.page.evaluate(
+        """([y0, x0]) => {
+            const [a, b] = WB.state.blots;
+            return [0, 1, 500, 2000].every((i) => {
+                const y = Math.floor(i / b.work.wb.w), x = i % b.work.wb.w;
+                return b.work.wb.data[i] === a.work.wb.data[(y + y0) * a.work.wb.w + x + x0];
+            });
+        }""",
+        crop[:2],
+    )
+    assert ui.state("s.blots[1].session.lanes.map((l) => l.x_center)") == pytest.approx(
+        [x - crop[1] for x in ui.state("b.session.lanes.map((l) => l.x_center)")]
+    )
+    # only one of them has the lane labels above it
+    assert ui.state("s.blots.map((b) => b.labels)") == [True, False, False]
+
+    # the rectangle is still there: move it and take the next area
+    assert ui.state("b.pending.crop") is not None and ui.state("s.blots[1].pending.crop") is None
+    ui.drag(ui.on_card(0, 100, 300), ui.on_card(0, 300, 300))
+    ui.click("crop-new")
+    ui.flush()
+    assert ui.state("s.blots.map((b) => b.name)") == ["target", "target 2", "target 3", "control"]
+    assert ui.state("s.blots[2].session.transform.crop") == pytest.approx([250, 60, 350, 600], abs=4)
+
+    # the new blots are independent: cropping and lanes of one leave the others alone
+    ui.select_blot(1)
+    ui.click("crop-reset")
+    ui.flush()
+    assert ui.state("[s.blots[1].work.wb.h, s.blots[2].work.wb.h, s.blots[0].work.wb.h]") == [420, pytest.approx(100, abs=4), 420]
+    ui.state("(s.blots[1].session.lanes.length = 2, 0)")
+    assert ui.state("[s.blots[0].session.lanes.length, s.blots[2].session.lanes.length]") == [8, 8]
+
+    # and they come back from a saved project
+    saved = ui.page.evaluate("JSON.stringify(WB.project.serialize())")
+    ui.page.evaluate("(text) => WB.project.load(JSON.parse(text))", saved)
+    ui.flush()
+    assert ui.state("s.blots.map((b) => [b.name, b.work.wb.h])") == [["target", 420], ["target 2", 420], ["target 3", pytest.approx(100, abs=4)], ["control", 420]]
+
+
+def test_normalize_across_samples(quantified):
+    ui = quantified
+    raw = ui.state("WB.app.results(b).rows")
+    top = [max(row[j] for row in raw) for j in range(3)]
+    assert not ui.t("normalize").is_checked()
+    ui.t("normalize").check()
+    ui.flush()
+
+    # every peak is divided by its largest area among the lanes
+    expected = [[v / top[j] for j, v in enumerate(row)] for row in raw]
+    table = [[float(c) for c in ui.page.locator("[data-t=results] tr").nth(i + 1).locator("td").all_inner_texts()] for i in range(8)]
+    assert np.allclose(table, expected, rtol=1e-4)
+    assert [max(column) for column in zip(*table)] == [1, 1, 1] and min(min(row) for row in table) > 0
+    csv = ui.download("results-csv")
+    assert csv.suggested_filename == "target_normalized.csv"
+    lines = open(csv.path()).read().splitlines()
+    assert lines[0] == "Lane,Peak 1,Peak 2,Peak 3"
+    assert np.allclose([[float(v) for v in line.split(",")[1:]] for line in lines[1:]], expected, rtol=1e-5)
+    # the areas themselves are what they were
+    assert ui.state("WB.app.results(b).rows") == raw
+    assert float(ui.t("peak-area").inner_text()) == pytest.approx(raw[0][0], rel=1e-4)
+
+    # a peak that a lane does not have stays empty; one that is not above the background anywhere is left out
+    ui.state("(b.session.lanes[6].peaks[2].quantify = false, WB.app.changed('quant'))")
+    ui.flush()
+    assert ui.page.locator("[data-t=results] tr").nth(7).locator("td").all_inner_texts()[2] == ""
+    assert ui.page.evaluate("WB.quant.normalizeRows([[2, 0, null], [4, -1, null], [null, 0, null]])") == [[0.5, None, None], [1, None, None], [None, None, None]]
+
+    # the option is saved with the project
+    saved = ui.page.evaluate("JSON.stringify(WB.project.serialize())")
+    ui.t("normalize").uncheck()
+    ui.flush()
+    assert float(ui.page.locator("[data-t=results] tr").nth(1).locator("td").first.inner_text()) == pytest.approx(raw[0][0], rel=1e-4)
+    ui.page.evaluate("(text) => WB.project.load(JSON.parse(text))", saved)
+    ui.flush()
+    assert ui.state("s.normalize") is True
+
+
+def test_copy_is_numbers_only_unless_headers_are_asked_for(quantified):
+    ui = quantified
+    ui.page.evaluate("Object.defineProperty(navigator, 'clipboard', { value: { writeText: (text) => ((window.copied = text), Promise.resolve()) }, configurable: true })")
+    rows = ui.state("WB.app.results(b).rows")
+    assert not ui.t("copy-headers").is_checked()
+    ui.click("results-copy")
+    lines = ui.page.evaluate("window.copied").splitlines()
+    assert len(lines) == 8 and all(len(line.split("\t")) == 3 for line in lines)
+    assert [float(v) for v in lines[2].split("\t")] == pytest.approx(rows[2], rel=1e-5)
+
+    ui.t("copy-headers").check()
+    ui.click("results-copy")
+    lines = ui.page.evaluate("window.copied").splitlines()
+    assert lines[0] == "Lane\tPeak 1\tPeak 2\tPeak 3" and len(lines) == 9
+    assert lines[3].split("\t")[0] == "3" and [float(v) for v in lines[3].split("\t")[1:]] == pytest.approx(rows[2], rel=1e-5)
+    # the choice stays while the panel is rebuilt
+    ui.state("WB.app.changed('quant')")
+    ui.flush()
+    assert ui.t("copy-headers").is_checked()
+
+    # the file has them either way
+    ui.t("copy-headers").uncheck()
+    csv = ui.download("results-csv")
+    assert open(csv.path()).read().splitlines()[0] == "Lane,Peak 1,Peak 2,Peak 3"
+
+
+def test_each_gel_is_grouped_with_its_border_in_the_svg(ui, blot_files):
+    ui.add_files(*blot_files)
+    ui.tab("figure")
+    groups = ui.page.evaluate(
+        """() => { const svg = new DOMParser().parseFromString(WB.figurepanel.build().svg, "image/svg+xml");
+            return [...svg.querySelectorAll("image")].map((image) => {
+                const g = image.parentNode;
+                return [g.tagName, g.getAttribute("class"), [...g.children].map((c) => c.getAttribute("class") || c.tagName)];
+            }); }"""
+    )
+    assert groups == [["g", "gel", ["image", "gel-border"]]] * 2
+    # the PNG is still drawn: the borders without the pictures
+    png = ui.download("export-png")
+    assert png_size(open(png.path(), "rb").read())[0] > 100
+
+
+def test_line_width_is_in_mm_and_older_projects_keep_their_lines(ui):
+    ui.click("add-sample")
+    ui.tab("figure")
+    assert ui.state("s.style.line_width_mm") == 0.2 and ui.t("line-width").input_value() == "0.2"
+    strokes = "[...new DOMParser().parseFromString(WB.figurepanel.build().svg, 'image/svg+xml').querySelectorAll('rect, line')].map((e) => e.getAttribute('stroke-width'))"
+    assert set(ui.state(strokes)) == {"0.567"}
+    ui.set("line-width", 0.5)
+    assert set(ui.state(strokes)) == {"1.417"}
+
+    # a version 5 project had the width in points: it keeps exactly that width
+    ui.page.evaluate(
+        """() => { const d = WB.project.serialize(); d.version = 5; d.style.line_width = 0.5; delete d.style.line_width_mm; delete d.style.decrowd;
+            window.v5 = JSON.stringify(d); WB.project.load(JSON.parse(window.v5)); }"""
+    )
+    ui.flush()
+    assert ui.state("[s.style.line_width_mm, 'line_width' in s.style, s.style.decrowd]") == [pytest.approx(0.5 * 25.4 / 72), False, False]
+    assert set(ui.state(strokes)) == {"0.5"}
+    assert float(ui.t("line-width").input_value()) == pytest.approx(0.176)
+    assert ui.state("WB.project.serialize().version === WB.model.PROJECT_VERSION")
+
+    # the same for a version 5 project that is stored in the browser, and for one in a library file
+    ui.page.evaluate(
+        """async () => { const d = JSON.parse(window.v5); const images = Object.fromEntries(Object.entries(d.images).map(([k, v]) => [k, WB.imageio.packedToBinary(v)]));
+            delete d.images;
+            await WB.store.put({ id: "old", name: "old one", created: 1, modified: 2, blots: ["Sample 1"] }, d, images);
+            await WB.library.open("old"); }"""
+    )
+    ui.flush()
+    assert ui.state("[s.project.id, s.blots.length, s.style.line_width_mm]") == ["old", 1, pytest.approx(0.5 * 25.4 / 72)]
+    added = ui.page.evaluate(
+        """async () => { const blob = WB.zip.write([{ name: "projects/five.webblot.json", data: window.v5 }]);
+            const outcome = await WB.library.importFile(new File([blob], "lib.webblot.zip"));
+            const five = (await WB.store.list()).find((p) => p.name === "five");
+            return [outcome, (await WB.store.load(five.id)).doc.style.line_width_mm, (await WB.store.load(five.id)).doc.version]; }"""
+    )
+    assert added == [{"added": 1, "skipped": 0, "failed": []}, pytest.approx(0.5 * 25.4 / 72), ui.state("WB.model.PROJECT_VERSION")]
+
+
+def test_decrowd_moves_overlapping_side_labels_outwards(ui):
+    ui.click("add-sample")
+    ui.tab("figure")
+    ui.state(
+        """(b.session.figure.mw_markers = [{ y: 100, text: "70" }, { y: 120, text: "55" }, { y: 300, text: "25" }],
+            b.session.figure.band_markers = [{ y: 110, text: "Target" }], b.session.figure.band_side = "left", WB.app.changed("figure"))"""
+    )
+    ui.flush()
+    labels = """(() => { const svg = document.querySelector("[data-t=preview] svg");
+        const lines = [...svg.querySelectorAll("line")].map((l) => ["x1", "y1", "x2", "y2"].map((k) => Number(l.getAttribute(k))));
+        return [...svg.querySelectorAll("text.mw-label, text.band-label")].map((t) => {
+            const box = t.getBBox();
+            const y = box.y + box.height / 2;
+            const level = lines.filter((l) => l[1] === l[3]);
+            const line = level.reduce((best, l) => (Math.abs(l[1] - y) < Math.abs(best[1] - y) ? l : best));
+            return { text: t.textContent, right: box.x + box.width, left: box.x, top: box.y, bottom: box.y + box.height, line: Math.abs(line[2] - line[0]) };
+        }); })()"""
+
+    def overlapping(found):
+        return [(a["text"], b["text"]) for i, a in enumerate(found) for b in found[i + 1 :]
+                if a["left"] < b["right"] and b["left"] < a["right"] and a["top"] < b["bottom"] and b["top"] < a["bottom"]]
+
+    off = {f["text"]: f for f in ui.state(labels)}
+    assert len({round(f["right"], 2) for f in off.values()}) == 1 and len({round(f["line"], 2) for f in off.values()}) == 1
+    assert overlapping(list(off.values()))
+
+    ui.t("decrowd").check()
+    ui.flush()
+    assert ui.state("s.style.decrowd") is True
+    on = {f["text"]: f for f in ui.state(labels)}
+    assert not overlapping(list(on.values()))
+    # labels with room stay where they were; the others go further out, in the order of their height, with longer lines
+    for text in ("70", "25"):
+        assert on[text]["right"] == pytest.approx(off[text]["right"]) and on[text]["line"] == pytest.approx(off[text]["line"])
+    assert on["55"]["right"] < on["Target"]["left"] and on["Target"]["right"] < on["70"]["left"]
+    assert on["55"]["line"] > on["Target"]["line"] > on["70"]["line"]
+    # each line ends just before its text
+    for f in on.values():
+        gel_edge = off["70"]["right"] + off["70"]["line"] + 0.3 * 8
+        assert gel_edge - f["line"] - f["right"] == pytest.approx(0.3 * 8, abs=0.3)
+    # labels on the other side are not in the way
+    ui.choose("band-side", "right")
+    on = {f["text"]: f for f in ui.state(labels)}
+    assert on["55"]["right"] < on["70"]["left"] and on["Target"]["left"] > on["70"]["right"]
+    assert on["Target"]["line"] == pytest.approx(off["Target"]["line"])
+    # nothing overlapping: the same figure with and without
+    ui.state("(b.session.figure.mw_markers[1].y = 200, b.session.figure.band_markers[0].y = 150, WB.app.changed('figure'))")
+    ui.flush()
+    with_option = ui.state("WB.figurepanel.build().svg")
+    ui.t("decrowd").uncheck()
+    ui.flush()
+    assert ui.state("WB.figurepanel.build().svg") == with_option
+
+
+def test_markers_stand_at_the_side_of_the_blot_and_are_dragged_anywhere_along_their_height(ui):
+    ui.click("add-sample")
+    ui.tab("figure")
+    ui.state(
+        """(b.session.figure.crop_on = true, b.session.figure.crop = [99.5, 199.5, 299.5, 449.5], b.session.figure.mw_markers = [{ y: 200, text: "55" }],
+            b.session.figure.band_markers = [{ y: 250, text: "Target" }, { y: 380, text: "below" }], WB.app.changed("figure"))"""
+    )
+    ui.flush()
+    card = ui.page.locator("[data-t=card]").first
+    stage = ui.rect(card.locator(".stage"))
+    mw, band = ui.rect(card.locator("[data-t=mw-marker-tick]")), ui.rect(card.locator("[data-t=band-marker-tick]").first)
+    # at the edges of the image, not of the figure area in its middle
+    assert mw["x"] == pytest.approx(stage["x"], abs=2) and band["x"] + band["width"] == pytest.approx(stage["x"] + stage["width"], abs=2)
+    assert mw["y"] + mw["height"] / 2 == pytest.approx(ui.on_card(0, 200, 0)[1], abs=1.5)
+    # a marker outside the figure area is dimmed
+    assert card.locator("[data-t=band-marker-tick]").nth(1).get_attribute("opacity") == "0.4"
+
+    # grabbed in the middle of the image, inside the figure area, and at the far side
+    ui.drag_on_card(0, (200, 320), (230, 330))
+    assert ui.state("b.session.figure.mw_markers[0].y") == pytest.approx(230, abs=2)
+    ui.drag_on_card(0, (230, 600), (180, 600))
+    assert ui.state("b.session.figure.mw_markers[0].y") == pytest.approx(180, abs=2)
+    assert ui.state("b.session.figure.crop") == [99.5, 199.5, 299.5, 449.5]
+    # the figure area can still be moved and resized
+    ui.drag_on_card(0, (100, 200), (90, 190))
+    assert ui.state("b.session.figure.crop.slice(0, 2)") == pytest.approx([89.5, 189.5], abs=2)
+    ui.drag_on_card(0, (150, 300), (160, 310))
+    assert ui.state("b.session.figure.crop.slice(0, 2)") == pytest.approx([99.5, 199.5], abs=3)
+
+    # on a zoomed blot they stand at the side of what is shown
+    ui.state("(WB.workspace.zoom(b, 2, [200, 320]), 0)")
+    mw = ui.rect(card.locator("[data-t=mw-marker-tick]"))
+    assert ui.state("b.view.x") > 100 and mw["x"] == pytest.approx(stage["x"], abs=2)
+    assert mw["y"] + mw["height"] / 2 == pytest.approx(ui.on_card(0, ui.state("b.session.figure.mw_markers[0].y"), 320)[1], abs=1.5)
+
+
+PASTE = """([selector, index, text]) => {
+    const cell = document.querySelectorAll(selector)[index];
+    cell.focus();
+    const event = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "clipboardData", { value: { getData: () => text } });
+    return cell.dispatchEvent(event);
+}"""
+
+
+def test_labels_are_pasted_from_a_spreadsheet(ui, blot_files):
+    ui.add_files(blot_files[0])
+    ui.tab("lanes")
+    ui.set("lane-count", 8)
+    ui.click("detect-lanes")
+    ui.tab("figure")
+    ui.click("label-add")
+    ui.flush()
+
+    def paste(selector, index, text):
+        handled = not ui.page.evaluate(PASTE, [f"[data-t={selector}]", index, text])
+        ui.flush()
+        return handled
+
+    rows = "b.session.figure.label_rows.map((r) => [r.title, ...r.values])"
+    # a block: to the right and down, adding the row that is missing
+    assert paste("label-cell", 1, "a\tb\tc\r\nd\te\tf\r\n")
+    assert ui.state(rows) == [["", "", "a", "b", "c", "", "", "", ""], ["", "", "d", "e", "f", "", "", "", ""]]
+    assert ui.page.locator("[data-t=label-row]").count() == 2
+    # a list copied as a column goes along the lanes
+    assert paste("label-cell", 8, "x\ny\nz\n")
+    assert ui.state(rows)[1] == ["", "x", "y", "z", "f", "", "", "", ""] and len(ui.state(rows)) == 2
+    # from the title column; what does not fit the lanes is dropped
+    assert paste("label-title", 0, "Drug\t-\t+")
+    assert paste("label-cell", 6, "1\t2\t3\t4")
+    assert ui.state(rows)[0] == ["Drug", "-", "+", "b", "c", "", "", "1", "2"]
+    # one value is an ordinary paste
+    assert not paste("label-cell", 0, "single")
+    assert ui.state(rows)[0][1] == "-"
+    figure = ui.state("WB.figurepanel.build().svg")
+    assert ">Drug<" in figure and ">z<" in figure
+
+    # Enter goes to the cell below, as in a sheet
+    ui.t("label-cell", 2).fill("new")
+    ui.page.keyboard.press("Enter")
+    ui.flush()
+    assert ui.state(rows)[0][3] == "new"
+    assert ui.page.evaluate("[document.activeElement.dataset.r, document.activeElement.dataset.c]") == ["1", "3"]
+    ui.page.keyboard.press("ArrowUp")
+    assert ui.page.evaluate("[document.activeElement.dataset.r, document.activeElement.dataset.c]") == ["0", "3"]
+
+    # markers: a list of labels goes down the markers that are there
+    ui.set("mw-count", 3)
+    ui.click("mw-place")
+    ui.flush()
+    texts = "b.session.figure.mw_markers.map((m) => m.text)"
+    assert paste("mw-text", 0, "250\n150\n100\n75\n")
+    assert ui.state(texts) == ["250", "150", "100"]
+    assert "1 pasted label has no marker" in ui.t("mw-paste-note").inner_text()
+    assert paste("mw-text", 1, "a\tb")
+    assert ui.state(texts) == ["250", "a", "b"] and ui.t("mw-paste-note").count() == 0
+    # y and label side by side: markers that are missing are added
+    assert paste("mw-y", 0, "400\tZ\n50,5\tX\n60\tY\n410\tW")
+    assert ui.state("b.session.figure.mw_markers") == [{"y": 50.5, "text": "X"}, {"y": 60, "text": "Y"}, {"y": 400, "text": "Z"}, {"y": 410, "text": "W"}]
+    assert ui.page.locator("[data-t=mw-text]").count() == 4
+
+
+def test_side_and_lower_panel_can_be_resized(ui):
+    page = ui.page
+    ui.click("add-sample")
+    ui.tab("lanes")
+    ui.click("detect-lanes")
+    ui.tab("quantify")
+    side, lower = page.locator("#side"), page.locator("#lower")
+    assert ui.rect(side)["width"] == 400 and ui.t("lower-title").inner_text() == "Lane profiles of Sample 1"
+    # the lower panel is a surface of its own
+    colours = page.evaluate("[getComputedStyle(document.querySelector('#lower')).backgroundColor, getComputedStyle(document.body).backgroundColor, getComputedStyle(document.querySelector('#lower')).borderTopWidth]")
+    assert colours[0] == "rgb(255, 255, 255)" != colours[1] and colours[2] == "1px"
+    plot = ui.rect(page.locator("svg.plot").first)["width"]
+    height = ui.rect(lower)["height"]
+
+    def drag_bar(name, dx, dy):
+        bar = ui.rect(ui.t(name))
+        start = [bar["x"] + bar["width"] / 2, bar["y"] + bar["height"] / 2]
+        ui.drag(start, [start[0] + dx, start[1] + dy])
+
+    drag_bar("side-bar", -150, 0)
+    assert ui.rect(side)["width"] == pytest.approx(550, abs=3)
+    assert ui.rect(page.locator("svg.plot").first)["width"] == pytest.approx(plot - 150, abs=4)
+    # the plots are drawn for their new width
+    assert float(page.locator("svg.plot").first.get_attribute("viewBox").split()[2]) == pytest.approx(ui.rect(page.locator("svg.plot").first)["width"], abs=1)
+    drag_bar("lower-bar", 0, 90)
+    assert ui.rect(lower)["height"] == pytest.approx(height - 90, abs=4)
+    assert "sized" in page.locator("main").get_attribute("class")
+    bottom = ui.rect(lower)["y"] + ui.rect(lower)["height"]
+    assert bottom <= 950 and ui.rect(page.locator("#workspace"))["height"] > 100
+    # it cannot be made to vanish, nor to take everything
+    drag_bar("lower-bar", 0, 2000)
+    assert ui.rect(lower)["height"] == pytest.approx(120, abs=2)
+    drag_bar("lower-bar", 0, -2000)
+    assert ui.rect(page.locator("#workspace"))["height"] >= 100
+    drag_bar("side-bar", 2000, 0)
+    assert ui.rect(side)["width"] == pytest.approx(260, abs=2)
+    drag_bar("side-bar", -190, 0)
+    width, lower_height = ui.rect(side)["width"], ui.rect(lower)["height"]
+
+    # the sizes are the page's: they are there after a reload, also on the other tab
+    page.evaluate("WB.library.saveNow()")
+    page.reload()
+    page.wait_for_function("window.WB && WB.library && WB.library.ready")
+    page.evaluate("WB.library.ready")
+    ui.flush()
+    assert ui.rect(side)["width"] == pytest.approx(width, abs=1)
+    ui.tab("figure")
+    assert ui.rect(lower)["height"] == pytest.approx(lower_height, abs=2) and ui.t("lower-title").inner_text() == "Figure preview"
+    assert page.locator("[data-t=preview] svg").is_visible()
+    # a double-click gives the default back
+    ui.t("side-bar").dblclick()
+    ui.t("lower-bar").dblclick()
+    ui.flush()
+    assert ui.rect(side)["width"] == 400 and "sized" not in page.locator("main").get_attribute("class")
+    # on the other tabs there is no lower panel
+    ui.tab("prepare")
+    assert not lower.is_visible() and not ui.t("lower-bar").is_visible()
+
+
+def test_figure_area_is_switched_on_and_off(ui, blot_files):
+    ui.add_files(*blot_files)
+    ui.select_blot(0)
+    ui.tab("figure")
+    page = ui.page
+    card = page.locator("[data-t=card]").first
+    height = "WB.figurepanel.build().gels.map((g) => g.box[2] - g.box[0])"
+    assert not ui.t("figure-crop").is_checked() and ui.state(height) == [420, 420]
+    assert ui.t("tool-figarea").count() == 0 and ui.t("figarea-clear").count() == 0
+
+    ui.t("figure-crop").check()
+    ui.flush()
+    ui.state("(b.session.figure.crop = [99.5, 49.5, 199.5, 599.5], WB.app.changed('figure'))")
+    ui.flush()
+    assert ui.state(height) == [100, 420]
+    assert card.locator("[data-t=figure-area]").count() == 1 and card.locator("[data-t=figure-area-corner]").count() == 4
+
+    # off: the whole image again; the box stays, grey, and cannot be moved
+    ui.t("figure-crop").uncheck()
+    ui.flush()
+    assert ui.state("[b.session.figure.crop, b.session.figure.crop_on]") == [[99.5, 49.5, 199.5, 599.5], False]
+    assert ui.state(height) == [420, 420]
+    assert card.locator("[data-t=figure-area]").count() == 0 and card.locator("[data-t=figure-area-corner]").count() == 0
+    ghost = card.locator("[data-t=figure-area-off]")
+    assert ghost.count() == 1 and ghost.get_attribute("stroke") == "#9a9a9a" and float(ghost.get_attribute("opacity")) < 1
+    box, stage = ui.rect(ghost), ui.rect(card.locator(".stage"))
+    assert box["height"] == pytest.approx(100 * stage["height"] / 420, abs=1.5)
+    ui.drag_on_card(0, (150, 300), (200, 350))
+    assert ui.state("b.session.figure.crop") == [99.5, 49.5, 199.5, 599.5]
+    # markers are placed over the whole image while it is off
+    ui.set("mw-count", 2)
+    ui.click("mw-place")
+    assert ui.state("b.session.figure.mw_markers.map((m) => m.y)") == pytest.approx([41.5, 377.5])
+
+    # on again: the same area as before
+    ui.t("figure-crop").check()
+    ui.flush()
+    assert ui.state("[b.session.figure.crop, b.session.figure.crop_on]") == [[99.5, 49.5, 199.5, 599.5], True] and ui.state(height) == [100, 420]
+    assert card.locator("[data-t=figure-area-off]").count() == 0
+
+    # the same switch for every blot in the list of panels, and one for all of them
+    assert [ui.t("panel-crop", i).is_checked() for i in range(2)] == [True, False] and not ui.t("panel-crop-all").is_checked()
+    ui.t("panel-crop", 1).check()
+    ui.flush()
+    assert ui.state("s.blots.map((b) => b.session.figure.crop_on)") == [True, True] and ui.t("panel-crop-all").is_checked()
+    assert ui.state("s.blots[1].session.figure.crop") == [41.5, 63.5, 377.5, 575.5] and ui.state(height) == [100, 336]
+    assert page.locator("[data-t=card]").nth(1).locator("[data-t=figure-area]").count() == 1
+    ui.t("panel-crop-all").uncheck()
+    ui.flush()
+    assert ui.state("s.blots.map((b) => b.session.figure.crop_on)") == [False, False] and ui.state(height) == [420, 420]
+    assert page.locator("[data-t=figure-area-off]").count() == 2 and not ui.t("figure-crop").is_checked()
+    ui.t("panel-crop-all").check()
+    ui.flush()
+    assert ui.state("s.blots.map((b) => [b.session.figure.crop_on, b.session.figure.crop[0]])") == [[True, 99.5], [True, 41.5]]
+    ui.t("panel-crop", 0).uncheck()
+    ui.flush()
+    assert not ui.t("panel-crop-all").is_checked() and not ui.t("figure-crop").is_checked()
+
+    # saved with the project, the area that is off included
+    saved = ui.state("JSON.stringify(WB.project.serialize())")
+    ui.page.evaluate("(text) => WB.project.load(JSON.parse(text))", saved)
+    ui.flush()
+    assert ui.state("s.blots.map((b) => [b.session.figure.crop_on, b.session.figure.crop[0]])") == [[False, 99.5], [True, 41.5]]
+
+    # a version 6 project had no switch: an area that was set is in use, as it was
+    ui.page.evaluate(
+        """(text) => { const d = JSON.parse(text); d.version = 6;
+            d.blots.forEach((b) => delete b.session.figure.crop_on); d.blots[1].session.figure.crop = null;
+            WB.project.load(d); }""",
+        saved,
+    )
+    ui.flush()
+    assert ui.state("s.blots.map((b) => [b.session.figure.crop_on, b.session.figure.crop && b.session.figure.crop[0]])") == [[True, 99.5], [False, None]]
+    assert ui.state(height) == [100, 420] and ui.state("WB.project.serialize().version === WB.model.PROJECT_VERSION")

@@ -65,9 +65,12 @@
         dom.row(null,
           toolButton("Draw crop", "crop", "tool-crop", "Draw a rectangle around the area to keep."),
           pendingButton("Apply crop", "crop-apply", blot.pending.crop, () => WB.workspace.applyCrop(blot)),
+          pendingButton("New blot from area", "crop-new", blot.pending.crop, () => WB.workspace.newFromCrop(blot),
+            "Leave this blot as it is and make the area a blot of its own, with the same rotation, brightfield and lanes."),
           pendingButton("Discard", "crop-discard", blot.pending.crop, () => WB.workspace.discard(blot, "crop")),
           dom.button("Reset crop", "crop-reset", () => app.setCrop(blot, null), "Show the whole image again.")),
-        blot.pending.crop ? dom.el("p", { class: "hint" }, "Move the rectangle or drag its corners, then press Apply crop.") : null,
+        blot.pending.crop ? dom.el("p", { class: "hint" },
+          "Move the rectangle or drag its corners, then press Apply crop. New blot from area keeps this blot whole and the rectangle in place, for cutting one image into several blots.") : null,
         dom.el("p", { class: "hint" }, "Changing the rotation resets the crop. Lanes are not rotated with the image, so straighten first.")),
       dom.group("Signal",
         dom.check("Bands are dark in the file", t.bands_dark, "bands-dark", (v) => {

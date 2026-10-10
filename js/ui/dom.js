@@ -77,6 +77,19 @@
     return dom.el("label", { class: "check", title }, input, label);
   };
 
+  // A switch between two states, the second one being "on".
+  dom.toggle = function (off, on, checked, t, onChange, title) {
+    const input = dom.el("input", {
+      type: "checkbox",
+      class: "switch",
+      "data-t": t,
+      checked: !!checked,
+      title,
+      onchange: () => onChange(input.checked),
+    });
+    return dom.el("label", { class: "toggle", title }, off ? dom.el("span", {}, off) : null, input, on ? dom.el("span", {}, on) : null);
+  };
+
   dom.select = function (options, value, t, onChange) {
     const select = dom.el(
       "select",

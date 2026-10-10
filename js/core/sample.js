@@ -1,5 +1,4 @@
 // Synthetic western blot with known lanes and bands, for trying the tool out.
-// Same construction as napari-blot's sample; the noise differs.
 (function () {
   "use strict";
   const WB = (window.WB = window.WB || {});

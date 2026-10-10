@@ -72,6 +72,91 @@
 
   // -------------------------------------------------------------------- panel
 
+  // ------------------------------------------------------------------- sheets
+
+  // Text copied from a spreadsheet as rows of cells.
+  figurepanel.parseBlock = (text) =>
+    text.replace(/\r\n?/g, "\n").replace(/\n+$/, "").split("\n").map((line) => line.split("\t").map((cell) => cell.trim()));
+
+  // Make a table of inputs behave like a sheet. Its cells are the inputs with
+  // data-r and data-c (row and column). Enter and the up and down arrows move
+  // between rows; a block of cells pasted from a spreadsheet goes to
+  // `onPaste(row, column, block)` instead of into the one input.
+  function sheet(table, onPaste) {
+    const position = (cell) => cell.dataset && cell.dataset.r !== undefined && [Number(cell.dataset.r), Number(cell.dataset.c)];
+    table.classList.add("sheet");
+    table.addEventListener("keydown", (ev) => {
+      const at = position(ev.target);
+      // in a number field the arrows change the number
+      const arrows = ev.target.type !== "number";
+      const step = ev.key === "Enter" || (arrows && ev.key === "ArrowDown") ? 1 : arrows && ev.key === "ArrowUp" ? -1 : 0;
+      if (!at || !step) return;
+      const next = table.querySelector(`[data-r="${at[0] + step}"][data-c="${at[1]}"]`);
+      if (!next) return;
+      ev.preventDefault();
+      next.focus();
+      next.select();
+    });
+    table.addEventListener("paste", (ev) => {
+      const at = position(ev.target);
+      if (!at || !ev.clipboardData) return;
+      const block = figurepanel.parseBlock(ev.clipboardData.getData("text/plain"));
+      if (block.length === 1 && block[0].length === 1) return; // one value: an ordinary paste
+      ev.preventDefault();
+      onPaste(at[0], at[1], block);
+    });
+    return table;
+  }
+
+  const isColumn = (block) => block.length > 1 && block.every((line) => line.length === 1);
+  const isRow = (block) => block.length === 1 && block[0].length > 1;
+
+  // A block pasted into the lane labels at label row `r`, column `c` (0 is the
+  // title, 1 the first lane). It fills lanes to the right and rows downwards;
+  // rows that are missing are added. A list that was copied as a column goes
+  // along the lanes.
+  function pasteLabels(blot, r, c, block) {
+    const fig = blot.session.figure;
+    const n = blot.session.lanes.length;
+    if (c >= 1 && isColumn(block)) block = [block.map((line) => line[0])];
+    block.forEach((line, dr) => {
+      if (!fig.label_rows[r + dr]) fig.label_rows[r + dr] = { title: "", values: Array(n).fill(""), collapse: false };
+      const row = fig.label_rows[r + dr];
+      line.forEach((value, dc) => {
+        if (c + dc === 0) row.title = value;
+        else if (c + dc <= n) row.values[c + dc - 1] = value;
+      });
+    });
+    app.changed("figure", "panel");
+  }
+
+  // What the last paste into a list of markers could not place.
+  const pasteNotes = new WeakMap();
+
+  // A block pasted into a marker table at marker `k`, column `c` (0 is y, 1
+  // the label). A list goes down the labels; with a y in front, markers that
+  // are missing are added.
+  function pasteMarkers(list, k, c, block) {
+    if (c === 1 && isRow(block)) block = block[0].map((value) => [value]);
+    const targets = block.map((_, dr) => list[k + dr]);
+    let dropped = 0;
+    block.forEach((line, dr) => {
+      const y = c === 0 ? parseFloat(line[0].replace(",", ".")) : NaN;
+      const text = c === 0 ? line[1] : line[0];
+      let marker = targets[dr];
+      if (!marker) {
+        if (Number.isNaN(y)) return void dropped++;
+        marker = { y, text: "" };
+        list.push(marker);
+      } else if (!Number.isNaN(y)) marker.y = y;
+      if (text !== undefined) marker.text = text;
+    });
+    list.sort((a, b) => a.y - b.y);
+    if (dropped) pasteNotes.set(list, `${dropped} pasted label${dropped === 1 ? " has" : "s have"} no marker to go to. Add markers first, or paste y and label side by side into the y column.`);
+    else pasteNotes.delete(list);
+    app.changed("figure", "panel");
+  }
+
   function labelGrid(blot) {
     const fig = blot.session.figure;
     const n = blot.session.lanes.length;
@@ -86,10 +171,13 @@
           title: "Collapse identical: neighbouring lanes with the same text share one label (a merged cell in a table, otherwise one centred text with a bar below).",
           onchange: (ev) => { row.collapse = ev.target.checked; changed(); },
         })),
-        dom.el("td", {}, dom.text(row.title, "label-title", (v) => { row.title = v; changed(); }, { class: "cell title", placeholder: "title" })),
+        dom.el("td", {}, dom.text(row.title, "label-title", (v) => { row.title = v; changed(); },
+          { class: "cell title", placeholder: "title", "data-r": r, "data-c": 0 })),
         row.values.slice(0, n).map((value, i) =>
-          dom.el("td", {}, dom.text(value, "label-cell", (v) => { row.values[i] = v; changed(); },
-            { class: `cell${shown.has(i) ? "" : " outside"}`, title: shown.has(i) ? null : "This lane is outside the figure area." }))),
+          dom.el("td", {}, dom.text(value, "label-cell", (v) => { row.values[i] = v; changed(); }, {
+            class: `cell${shown.has(i) ? "" : " outside"}`, title: shown.has(i) ? null : "This lane is outside the figure area.",
+            "data-r": r, "data-c": i + 1,
+          }))),
         dom.el("td", {},
           dom.button("⇥", "label-fill", () => {
             // repeat each entry to the right until the next one that is filled in
@@ -100,16 +188,25 @@
           dom.button("×", "label-remove", () => { fig.label_rows.splice(r, 1); app.changed("figure", "panel"); }, "Remove this row")));
     });
     return dom.el("div", { class: "scroll-x" },
-      dom.el("table", { class: "grid labels", "data-t": "labels" },
+      sheet(dom.el("table", { class: "grid labels", "data-t": "labels" },
         dom.el("tr", {}, dom.el("th", { title: "Collapse identical neighbouring cells into one label" }, "Collapse identical"), dom.el("th", {}, "Title"),
           Array.from({ length: n }, (_, i) => dom.el("th", {}, i + 1)), dom.el("th", {}, "")),
-        rows));
+        rows), (r, c, block) => pasteLabels(blot, r, c, block)));
   }
 
   function markerGroup(blot, title, key, sideKey, t, placeholder) {
     const fig = blot.session.figure;
     const list = fig[key];
-    const changed = () => app.changed("figure", "panel");
+    const changed = () => {
+      pasteNotes.delete(list);
+      app.changed("figure", "panel");
+    };
+    const cell = (input, k, c) => {
+      input.classList.add("cell");
+      input.dataset.r = k;
+      input.dataset.c = c;
+      return input;
+    };
     const count = { value: list.length };
     const place = () => {
       const [y0, , y1] = workspace.figureBox(blot);
@@ -131,16 +228,20 @@
           changed();
         })),
       dom.row("Side", dom.select([["left", "left"], ["right", "right"]], fig[sideKey], `${t}-side`, (v) => { fig[sideKey] = v; changed(); })),
-      list.length ? dom.el("table", { class: "grid", "data-t": `${t}-table` },
+      list.length ? sheet(dom.el("table", { class: "grid", "data-t": `${t}-table` },
         dom.el("tr", {}, dom.el("th", {}, "y (px)"), dom.el("th", {}, "Label"), dom.el("th", {}, "")),
         list.map((m, k) => dom.el("tr", {},
-          dom.el("td", {}, dom.number(Math.round(m.y), { t: `${t}-y`, step: 1, width: 60 }, (v) => {
+          dom.el("td", {}, cell(dom.number(Math.round(m.y), { t: `${t}-y`, step: 1, width: 70 }, (v) => {
             m.y = v;
             list.sort((a, b) => a.y - b.y);
             changed();
-          })),
-          dom.el("td", {}, dom.text(m.text, `${t}-text`, (v) => { m.text = v; app.changed("figure"); }, { class: "cell wide", placeholder })),
-          dom.el("td", {}, dom.button("×", `${t}-remove`, () => { list.splice(k, 1); changed(); }, "Remove this marker"))))) : null);
+          }), k, 0)),
+          dom.el("td", {}, cell(dom.text(m.text, `${t}-text`, (v) => { m.text = v; app.changed("figure"); }, { class: "wide", placeholder }), k, 1)),
+          dom.el("td", {}, dom.button("×", `${t}-remove`, () => { list.splice(k, 1); changed(); }, "Remove this marker"))))),
+        (k, c, block) => pasteMarkers(list, k, c, block)) : null,
+      pasteNotes.has(list) ? dom.el("p", { class: "notice", "data-t": `${t}-paste-note` }, pasteNotes.get(list)) : null,
+      list.length ? dom.el("p", { class: "hint" },
+        "A list copied from a spreadsheet can be pasted into the Label column; two columns (y, label) into the y column.") : null);
   }
 
   figurepanel.panel = function (blot) {
@@ -154,9 +255,9 @@
     const built = figurepanel.build();
     return [
       dom.group(`Figure area of “${blot.name}”`,
-        dom.row(null,
-          panels.toolButton("Draw area", "figarea", "tool-figarea", "Draw the part of the blot to show."),
-          dom.button("Whole image", "figarea-clear", () => { fig.crop = null; app.changed("figure", "panel"); })),
+        dom.row(null, dom.toggle("Whole image", "Selected area only", fig.crop_on, "figure-crop", (v) => app.setFigureCrop(blot, v),
+          "Show the whole blot in the figure, or only the area in the box on the blot.")),
+        fig.crop_on ? dom.el("p", { class: "hint" }, "Move the box on the blot or drag its corners.") : null,
         blot.work.bf ? dom.row(null, dom.check("Show the brightfield (marker) in the figure", fig.show_bf, "figure-bf",
           (v) => { fig.show_bf = v; app.changed("figure"); },
           "Merge the brightfield image into this blot's panel, with the exposure set for it under the image.")) : null),
@@ -165,18 +266,24 @@
         dom.row(null,
           dom.button("+ Row", "label-add", addRow, "A row of labels: one text above each lane.")),
         dom.el("p", { class: "hint" },
-          "Give a row a title to show it at the left. Tick “Collapse identical” to merge neighbouring lanes with the same text into one label.")),
+          "Give a row a title to show it at the left. Tick “Collapse identical” to merge neighbouring lanes with the same text into one label. Cells copied from a spreadsheet can be pasted in; a list copied as a column goes along the lanes.")),
       markerGroup(blot, "MW markers", "mw_markers", "mw_side", "mw", "e.g. 55"),
       markerGroup(blot, "Band markers", "band_markers", "band_side", "band", "e.g. GAPDH"),
       dom.group("Panels, top to bottom",
         dom.el("table", { class: "grid", "data-t": "panel-list" },
-          dom.el("tr", {}, ["Show", "Blot", "Lane labels", ""].map((h) => dom.el("th", {}, h))),
+          dom.el("tr", {}, dom.el("th", {}, "Show"), dom.el("th", {}, "Blot"), dom.el("th", {}, "Lane labels"),
+            dom.el("th", {}, "Cropped ", dom.toggle(null, null, state.blots.every((b) => b.session.figure.crop_on), "panel-crop-all",
+              (v) => state.blots.forEach((b) => app.setFigureCrop(b, v)),
+              "All blots: only the selected area, or the whole image.")),
+            dom.el("th", {}, "")),
           state.blots.map((b) => dom.el("tr", { "data-t": "panel-row" },
             dom.el("td", {}, dom.el("input", { type: "checkbox", checked: b.include, "data-t": "panel-include",
               onchange: (ev) => { b.include = ev.target.checked; restyle(); } })),
             dom.el("td", {}, b.name),
             dom.el("td", {}, dom.el("input", { type: "checkbox", checked: b.labels, "data-t": "panel-labels",
               onchange: (ev) => { b.labels = ev.target.checked; restyle(); } })),
+            dom.el("td", {}, dom.toggle(null, null, b.session.figure.crop_on, "panel-crop", (v) => app.setFigureCrop(b, v),
+              "Only the selected area of this blot, or the whole image.")),
             dom.el("td", {},
               dom.button("↑", "panel-up", () => app.moveBlot(b.id, -1)),
               dom.button("↓", "panel-down", () => app.moveBlot(b.id, 1)))))),
@@ -191,7 +298,10 @@
             (v) => { style.mw_unit_position = v; restyle(); })),
         dom.row("Font size", dom.number(style.font_size, { t: "font-size", min: 4, max: 30, step: 0.5 }, (v) => { style.font_size = v; restyle(); }), "pt"),
         dom.row("Gel width", dom.number(style.gel_width_mm, { t: "gel-width", min: 10, max: 300, step: 1 }, (v) => { style.gel_width_mm = v; app.changed("figure", "panel"); }), "mm"),
-        dom.row("Line width", dom.number(style.line_width, { t: "line-width", min: 0.1, max: 5, step: 0.1 }, (v) => { style.line_width = v; restyle(); }), "pt"),
+        dom.row("Line width", dom.number(Math.round(style.line_width_mm * 1000) / 1000, { t: "line-width", min: 0.05, max: 2, step: 0.05 },
+          (v) => { style.line_width_mm = v; restyle(); }), "mm"),
+        dom.row(null, dom.check("Decrowd labels", style.decrowd, "decrowd", (v) => { style.decrowd = v; restyle(); },
+          "Where MW or band labels on one side of a gel would overlap, write them further out, each with a longer line.")),
         dom.row("PNG resolution",
           dom.select([["1", "Lossless (image pixels)"], ["0", "Custom dpi"]], style.lossless ? "1" : "0", "resolution",
             (v) => { style.lossless = v === "1"; app.changed("figure", "panel"); }),

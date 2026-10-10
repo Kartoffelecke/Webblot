@@ -7,7 +7,7 @@
   const quantify = (WB.quantify = {});
 
   const PLOT = { height: 124, left: 58, right: 10, top: 16, bottom: 18 };
-  const options = { prominencePct: 5 };
+  const options = { prominencePct: 5, copyHeaders: false };
   quantify.options = options;
 
   const METHOD_LABELS = [
@@ -206,7 +206,7 @@
       noPeaks ? dom.el("p", { class: "notice", "data-t": "no-peaks" },
         "No peaks are marked yet. Press ",
         dom.button("Detect (all)", "detect-all-here", () => quantify.detect(blot, true)),
-        " to find them in every lane, or double-click a band in a plot.") : null,
+        " to find them in every lane, or double-click a band in a plot.") : "", // not null: the DOM would print it
       dom.el("p", { class: "hint" },
         "Drag a peak's borders to move them. Double-click adds a peak, right-click on a peak removes it. Shift + double-click adds a background anchor or removes the one under the cursor; drag anchors and line ends to shape the background."),
       ...plots);
@@ -225,13 +225,20 @@
     app.changed("quant");
   };
 
-  quantify.csv = (blot, sep = ",") => {
+  // The table as it is reported: areas, or with "Normalize across samples"
+  // each band relative to the lane in which it is largest.
+  quantify.table = (blot) => {
     const { bands, rows } = app.results(blot);
-    return quant.tableToCsv(bands, rows, sep);
+    return { bands, rows: state.normalize ? quant.normalizeRows(rows) : rows };
+  };
+
+  quantify.csv = (blot, sep = ",", headers = true) => {
+    const { bands, rows } = quantify.table(blot);
+    return quant.tableToCsv(bands, rows, sep, headers);
   };
 
   function resultsTable(blot) {
-    const { bands, rows } = app.results(blot);
+    const { bands, rows } = quantify.table(blot);
     return dom.el("table", { class: "grid", "data-t": "results" },
       dom.el("tr", {}, dom.el("th", {}, ""), bands.map((b) => dom.el("th", {}, `Peak ${b}`))),
       rows.map((row, i) =>
@@ -306,10 +313,17 @@
           dom.el("tr", {}, ["Use", "Peak #", "Start", "End", "Area", ""].map((h) => dom.el("th", {}, h))),
           peakRows)),
       dom.group("Band areas (rows: lanes, columns: peaks)",
+        dom.row(null, dom.check("Normalize across samples", state.normalize, "normalize", (v) => {
+          state.normalize = v;
+          changed();
+        }, "Divide each peak by its largest area among the lanes, so that every column runs from 0 to 1. Applies to the table, Copy and the CSV of every blot.")),
         dom.el("div", { class: "scroll-x" }, resultsTable(blot)),
         dom.row(null,
-          dom.button("Copy", "results-copy", () => navigator.clipboard.writeText(quantify.csv(blot, "\t"))),
-          dom.button("Download CSV", "results-csv", () => dom.download(`${blot.name}_areas.csv`, quantify.csv(blot), "text/csv")))),
+          dom.button("Copy", "results-copy", () => navigator.clipboard.writeText(quantify.csv(blot, "\t", options.copyHeaders)),
+            "Copy the table, to paste into a spreadsheet."),
+          dom.check("Copy headers", options.copyHeaders, "copy-headers", (v) => (options.copyHeaders = v),
+            "Also copy the title row and the column of lane numbers. The CSV file always has them."),
+          dom.button("Download CSV", "results-csv", () => dom.download(`${blot.name}_${state.normalize ? "normalized" : "areas"}.csv`, quantify.csv(blot), "text/csv")))),
     ];
   };
 })();

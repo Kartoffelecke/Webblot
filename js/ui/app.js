@@ -2,7 +2,7 @@
 (function () {
   "use strict";
   const WB = (window.WB = window.WB || {});
-  const { dom, app, state, imageio, panels, quantify, figurepanel, project } = WB;
+  const { dom, app, state, num, imageio, panels, quantify, figurepanel, project, library } = WB;
 
   const TABS = [
     ["prepare", "Prepare"],
@@ -15,7 +15,8 @@
     const problems = [];
     for (const file of files) {
       try {
-        if (file.name.endsWith(".json")) await project.open(file);
+        if (file.name.endsWith(".json")) await library.openFile(file);
+        else if (file.name.endsWith(".zip")) await library.show(library.describe(await library.importFile(file)));
         else app.addBlot(file.name.replace(/\.[^.]+$/, ""), await imageio.readFile(file));
       } catch (error) {
         problems.push(`${file.name}: ${error.message}`);
@@ -42,9 +43,8 @@
         const file = projectFile.files[0];
         projectFile.value = "";
         if (!file) return;
-        if (state.blots.length && !confirm("Opening a project closes the blots that are open. Continue?")) return;
         try {
-          await project.open(file);
+          await library.openFile(file);
         } catch (error) {
           alert(`Could not open the project: ${error.message}`);
         }
@@ -52,16 +52,19 @@
     });
     return dom.el("header", {},
       dom.el("strong", {}, "web_blot"),
+      library.headerParts(),
       dom.button("Add blots…", "add-blots", () => files.click(), "Open one or more blot images; each becomes a blot."),
       dom.button("Sample blot", "add-sample", app.addSample),
-      dom.button("Open project…", "open-project-button", () => projectFile.click()),
-      dom.button("Save project", "save-project", project.save, "Download one file with all blots, settings and image data."),
+      dom.button("Open project…", "open-project-button", () => projectFile.click(),
+        "Open a project file as a new project. The project that is open stays in the browser."),
+      dom.button("Save project", "save-project", project.save, "Download this project as one file with all blots, settings and image data."),
       dom.el("label", {}, "Blot size", dom.el("input", {
         type: "range", min: 200, max: 1100, step: 10, value: state.cardWidth, "data-t": "card-size",
         oninput: (ev) => { state.cardWidth = Number(ev.target.value); app.changed("tool"); },
       })),
       dom.check("Hide blots", state.hideBlots, "hide-blots", (v) => { state.hideBlots = v; app.changed("tool"); },
         "Give the whole area to the lane plots or the figure."),
+      library.statusPart(),
       files, projectFile);
   }
 
@@ -97,11 +100,75 @@
     }
   }
 
+  // ------------------------------------------------------------------- layout
+
+  // Sizes the user gave the side panel and the lower panel by dragging their
+  // bars; null is the default. A setting of the page, not of the project.
+  const LAYOUT = "web_blot.layout";
+  const layout = { side: null, lower: null };
+  try {
+    Object.assign(layout, JSON.parse(localStorage.getItem(LAYOUT)) || {});
+  } catch (error) {
+    // nothing stored, or no storage: the defaults
+  }
+
+  function applyLayout() {
+    const side = document.getElementById("side");
+    const main = document.querySelector("main");
+    if (!side || !main) return;
+    side.style.width = layout.side ? `${num.clip(layout.side, 260, Math.max(0.6 * window.innerWidth, 260))}px` : "";
+    main.classList.toggle("sized", !!layout.lower);
+    // the blots keep at least 120 px; 31 px are the padding of the area and the bar
+    const room = main.getBoundingClientRect().height - 31 - 120;
+    document.getElementById("lower").style.height = layout.lower ? `${num.clip(layout.lower, 120, Math.max(room, 120))}px` : "";
+  }
+
+  // A bar that is dragged to change `layout[key]`; `measure(event)` gives the
+  // size for a pointer position. A double-click goes back to the default.
+  function dragBar(id, key, measure, title) {
+    const set = (value) => {
+      layout[key] = value;
+      applyLayout();
+      app.changed("tool"); // the plots and overlays are drawn for the size they have
+    };
+    const store = () => {
+      try {
+        localStorage.setItem(LAYOUT, JSON.stringify(layout));
+      } catch (error) {
+        // the size then lasts until the page is closed
+      }
+    };
+    return dom.el("div", {
+      id, class: "dragbar", "data-t": id, title,
+      onpointerdown: (ev) => {
+        ev.preventDefault();
+        const move = (e) => set(Math.round(measure(e)));
+        const up = () => {
+          window.removeEventListener("pointermove", move);
+          window.removeEventListener("pointerup", up);
+          document.body.classList.remove("resizing");
+          store();
+        };
+        document.body.classList.add("resizing");
+        window.addEventListener("pointermove", move);
+        window.addEventListener("pointerup", up);
+      },
+      ondblclick: () => {
+        set(null);
+        store();
+      },
+    });
+  }
+
   let lowerShows = null; // what the lower area was last built for
 
   function renderLower(kinds) {
-    const lower = document.getElementById("lower");
+    const panel = document.getElementById("lower");
+    const lower = document.getElementById("lower-body");
     if (!lower) return;
+    const blot = app.blot();
+    document.getElementById("lower-title").textContent =
+      state.tab === "quantify" ? `Lane profiles${blot ? ` of ${blot.name}` : ""}` : state.tab === "figure" ? "Figure preview" : "";
     const shows = `${state.tab}:${state.selected}`;
     const onlySelection = [...kinds].every((k) => k === "select" || k === "display");
     if (onlySelection && shows === lowerShows && state.tab === "quantify") {
@@ -111,11 +178,12 @@
       return;
     }
     lowerShows = shows;
-    lower.className = state.tab;
+    panel.className = state.tab;
     // with plots or a figure below, the blots keep to the upper part of the
     // window, so that what the tab shows is in view without scrolling
-    const main = lower.parentNode;
+    const main = panel.parentNode;
     main.classList.toggle("split", state.tab === "quantify" || state.tab === "figure");
+    applyLayout();
     if (state.tab === "quantify") quantify.renderPlots(lower);
     else if (state.tab === "figure") figurepanel.renderPreview(lower);
     else lower.replaceChildren();
@@ -127,6 +195,8 @@
     "WB.num": "js/core/num.js",
     "WB.model": "js/core/model.js",
     "WB.imageio": "js/core/imageio.js",
+    "WB.zip": "js/core/zip.js",
+    "WB.store": "js/core/store.js",
     "WB.processing": "js/core/processing.js",
     "WB.lanes": "js/core/lanes.js",
     "WB.quant": "js/core/quantification.js",
@@ -137,6 +207,7 @@
     "WB.quantify": "js/ui/quantify.js",
     "WB.figurepanel": "js/ui/figurepanel.js",
     "WB.project": "js/ui/project.js",
+    "WB.library": "js/ui/library.js",
   };
 
   // A script that did not load (a missing file, or one refused by a content
@@ -160,10 +231,22 @@
     document.getElementById("app").replaceChildren(
       topBar(),
       dom.el("div", { id: "body" },
-        dom.el("main", {}, dom.el("div", { id: "workspace" }), dom.el("div", { id: "lower" })),
+        dom.el("main", {},
+          dom.el("div", { id: "workspace" }),
+          dragBar("lower-bar", "lower", (e) => document.querySelector("main").getBoundingClientRect().bottom - 10 - e.clientY - 5.5, // the bar is 11 px high
+            "Drag to change the height of this panel; double-click for the default."),
+          dom.el("div", { id: "lower" },
+            dom.el("div", { id: "lower-title", "data-t": "lower-title" }),
+            dom.el("div", { id: "lower-body" }))),
+        dragBar("side-bar", "side", (e) => window.innerWidth - e.clientX - 3,
+          "Drag to change the width of the side panel; double-click for the default."),
         dom.el("aside", { id: "side" })));
     app.views.push(renderSide, renderLower);
-    window.addEventListener("resize", () => app.changed("tool"));
+    applyLayout();
+    window.addEventListener("resize", () => {
+      applyLayout();
+      app.changed("tool");
+    });
     // dropping image files anywhere adds them as blots
     document.addEventListener("dragover", (ev) => ev.preventDefault());
     document.addEventListener("drop", (ev) => {
@@ -172,6 +255,7 @@
     });
     app.changed("blots", "panel");
     app.flush();
+    library.ready = library.start();
   }
 
   start();
