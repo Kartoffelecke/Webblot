@@ -15,7 +15,7 @@
     ["rolling", "Rolling ball"],
     ["linear", "Straight line"],
     ["manual", "Manual anchors"],
-    ["valley", "Valley to valley (as in Fiji)"],
+    ["valley", "Valley to valley"],
   ];
 
   // -------------------------------------------------------------------- plots
