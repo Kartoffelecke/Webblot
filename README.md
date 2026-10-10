@@ -2,15 +2,27 @@
 
 Western blot / gel analysis in the browser: prepare several blots side by side,
 mark lanes, quantify bands from lane profiles and build a labelled multi-panel
-figure. A function-complete prototype in plain HTML and JavaScript; the visual
-design is not done yet.
+figure. Plain HTML and JavaScript, nothing to install.
 
 ## Use
 
 Open `index.html` in a browser (double-click). There is nothing to install and
 no server; the files can also be put on any web host.
 
-- **Add blots…** opens one or more images (16-bit TIFF, PNG, JPEG). Every blot
+The page follows a blot through four steps, shown as the numbered bar under the
+header: **Prepare**, **Lanes**, **Quantify**, **Figure**. A tick marks the
+steps the selected blot already has something for. The panel on the right
+belongs to the current step: it says what the step is for, has the usual
+action as its one coloured button, and ends with a button to the next step.
+Its sections fold; the page remembers which are open. Keys `1` to `4` go to
+the steps, and `?` (or the button at the top right) lists what the mouse and
+the keys do. The page is light or dark with the system, or as set with the
+button beside it.
+
+Removing a blot or a lane asks nothing: the message at the bottom has an
+*Undo*. Only what cannot be brought back is asked about first.
+
+- **Add blots** opens one or more images (16-bit TIFF, PNG, JPEG). Every blot
   is a card; all cards stay visible. Click a card to make it the one the side
   panel works on. Exposure (min, max, gamma, invert) is set on each card.
 - **Zoom**: the −, % and + buttons on a card, or Ctrl / ⌘ + wheel (or a pinch)
@@ -79,7 +91,7 @@ no server; the files can also be put on any web host.
 - **Panels**: drag the bar left of the side panel to change its width, and the
   bar above the lane plots or the figure preview to change their height;
   double-click a bar for the default. The sizes are kept by the browser.
-- **Lane labels**: rows of text, one entry per lane. Tick *Collapse identical*
+- **Lane labels**: rows of text, one entry per lane. Tick *Collapse*
   on a row to give neighbouring lanes with the same text one shared label: a
   merged cell in the table style, otherwise one centred text with a bar below.
 - **Projects** are stored in the browser as you work; nothing has to be
@@ -169,11 +181,12 @@ Unzipped, each project file opens on its own. A zip of project files without
 
 ```
 index.html
-css/app.css
+css/           tokens (colours, sizes; light and dark), base, components, layout
 js/vendor/     UTIF.js (TIFF decoding) and pako, pinned copies with licences
 js/core/       no interface code: numerics, image reading, lanes, quantification, figure,
                zip files, the browser's storage
-js/ui/         state, workspace cards, side panels, lane plots, project files, the library
+js/ui/         state, workspace cards, side panels, lane plots, project files, the library,
+               icons, messages and questions, theme
 tests/         browser tests (Python, Playwright)
 ```
 
@@ -203,6 +216,8 @@ change to how peaks are found, `uv run python record_reference.py` records the
 values that depend on it again; look at the difference before committing it.
 `test_ui.py` drives the interface with real mouse and keyboard events.
 `test_library.py` covers the projects in the browser and the library file.
+`test_design.py` covers first use, the steps, folding sections, the themes
+(including that text has enough contrast in both), undo and the questions.
 `uv run python screenshots.py <folder>` writes screenshots of the main views
 using the real blot `tests/data/chemidoc_lc3.tif`; the tests that use this blot
 are skipped if the file is not there.

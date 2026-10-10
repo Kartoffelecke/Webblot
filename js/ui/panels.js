@@ -96,7 +96,7 @@
             }, "Delete the brightfield image.")),
           dom.el("p", { class: "hint" }, "Its min, max and gamma are below the blot's, under the image."),
         ] : dom.el("p", { class: "hint" },
-          "Optional image of the same membrane with the visible marker. Choose a file, or drag another blot by its ⠿ handle onto this blot's image.")),
+          "Optional image of the same membrane with the visible marker. Choose a file, or drag another blot by its handle onto this blot's image.")),
       others(blot).length ? dom.group("Copy setup",
         dom.row("From", copyFrom),
         dom.el("p", { class: "hint" }, "Copies rotation, crop, lanes, figure area and lane labels. Peaks, exposure and markers are not copied.")) : null,

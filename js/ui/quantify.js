@@ -209,7 +209,7 @@
         dom.primary("Detect peaks", "detect-all-here", () => quantify.detect(blot, true)),
         " to find them in every lane, or double-click a band in a plot.") : "", // not null: the DOM would print it
       dom.el("p", { class: "hint" },
-        "Drag a peak's borders to move them. Double-click adds a peak, right-click on a peak removes it. Shift + double-click adds a background anchor or removes the one under the cursor; drag anchors and line ends to shape the background."),
+        "Drag a peak's borders to move them. Double-click a band to add a peak, right-click a peak to remove it. More under the ? at the top."),
       ...plots);
     plots.forEach((svg, i) => drawPlot(blot, i, svg));
   };

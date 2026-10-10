@@ -133,7 +133,7 @@ svg.plot.current .plot-title { fill: var(--accent); }
 .peak-region.unused { fill: var(--text-3); fill-opacity: 0.07; }
 .peak-fill { fill: var(--plot-fill); pointer-events: none; }
 .peak-fill.unused { fill: var(--plot-fill-unused); }
-.peak-border { stroke: var(--accent); stroke-width: 5; stroke-opacity: 0.55; cursor: ew-resize; }
+.peak-border { stroke: var(--accent); stroke-width: 5; stroke-opacity: 0.32; cursor: ew-resize; }
 .peak-border:hover { stroke-opacity: 0.9; }
 .peak-border.unused { stroke: var(--text-3); }
 .peak-number { fill: var(--accent); font-size: 11px; font-weight: 700; pointer-events: none; }
@@ -160,3 +160,6 @@ table.library-list input:hover { border-color: var(--border-strong); }
 .fatal { margin: 40px auto; max-width: 560px; padding: 20px 26px; background: var(--surface); border: 2px solid var(--danger); border-radius: var(--radius); }
 .fatal h1 { font-size: 18px; margin: 0 0 8px; color: var(--danger); }
 .fatal p, .fatal ul { margin: 8px 0; }
+
+/* text that stands in the side panel outside a section */
+#side > .hint, #side > .notice { margin: var(--s3) var(--s4); }

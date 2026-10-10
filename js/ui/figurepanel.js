@@ -189,7 +189,7 @@
     });
     return dom.el("div", { class: "scroll-x" },
       sheet(dom.el("table", { class: "grid labels", "data-t": "labels" },
-        dom.el("tr", {}, dom.el("th", { title: "Collapse identical neighbouring cells into one label" }, "Collapse identical"), dom.el("th", {}, "Title"),
+        dom.el("tr", {}, dom.el("th", { title: "Collapse identical neighbouring cells into one label" }, "Collapse"), dom.el("th", {}, "Title"),
           Array.from({ length: n }, (_, i) => dom.el("th", {}, i + 1)), dom.el("th", {}, "")),
         rows), (r, c, block) => pasteLabels(blot, r, c, block)));
   }
@@ -266,7 +266,7 @@
         dom.row(null,
           dom.button([WB.icon("plus"), "Row"], "label-add", addRow, "A row of labels: one text above each lane.")),
         dom.el("p", { class: "hint" },
-          "Give a row a title to show it at the left. Tick “Collapse identical” to merge neighbouring lanes with the same text into one label. Cells copied from a spreadsheet can be pasted in; a list copied as a column goes along the lanes.")),
+          "Give a row a title to show it at the left. Tick “Collapse” to merge neighbouring lanes with the same text into one label. Cells copied from a spreadsheet can be pasted in; a list copied as a column goes along the lanes.")),
       markerGroup(blot, "MW markers", "mw_markers", "mw_side", "mw", "e.g. 55"),
       markerGroup(blot, "Band markers", "band_markers", "band_side", "band", "e.g. GAPDH"),
       dom.group("Panels",

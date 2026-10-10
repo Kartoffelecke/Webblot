@@ -58,6 +58,7 @@ table.grid th, table.grid td { border: 1px solid var(--border); padding: 3px 7px
 table.grid th { background: var(--surface-2); font-weight: 600; text-align: center; color: var(--text-2); font-size: var(--text-s); }
 table.grid td button.icon { border-color: transparent; background: transparent; color: var(--text-3); }
 table.grid td button.icon:hover { background: var(--surface-3); color: var(--text); }
+table.grid input[type="number"], table.grid input[type="text"] { height: 24px; padding: 0 5px; }
 input.cell { width: 46px; text-align: center; }
 input.cell.title, input.cell.wide { width: 92px; text-align: left; }
 input.cell.outside { color: var(--text-3); background: var(--surface-2); }
