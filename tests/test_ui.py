@@ -1665,3 +1665,55 @@ def test_figure_area_is_switched_on_and_off(ui, blot_files):
     ui.flush()
     assert ui.state("s.blots.map((b) => [b.session.figure.crop_on, b.session.figure.crop && b.session.figure.crop[0]])") == [[True, 99.5], [False, None]]
     assert ui.state(height) == [100, 420] and ui.state("WB.project.serialize().version === WB.model.PROJECT_VERSION")
+
+
+def test_valley_to_valley_background_in_the_quantify_tab(quantified):
+    ui = quantified
+    page = ui.page
+    rolling = ui.state("WB.app.results(b).rows")
+    borders = ui.state("b.session.lanes.map((l) => l.peaks.map((p) => [p.start, p.end]))")
+    ui.choose("bg-method", "valley")
+    assert ui.t("valley-hint").is_visible() and ui.t("bg-radius").is_enabled()
+    ui.click("bg-all")
+    ui.flush()
+    assert ui.state("b.session.lanes.map((l) => l.baseline.method)") == ["valley"] * 8
+    # the same peaks, measured above the line between their borders
+    assert ui.state("b.session.lanes.map((l) => l.peaks.map((p) => [p.start, p.end]))") == borders
+    valley = ui.state("WB.app.results(b).rows")
+    expected = ui.state(
+        """b.session.lanes.map((l) => { const p = WB.app.curves(b, l).profile;
+            return l.peaks.map((k) => { const [a, e] = WB.quant.peakBounds(k, p.length); let s = 0;
+                const d = (i) => Math.max(p[i] - (p[a] + (p[e] - p[a]) * (i - a) / (e - a)), 0);
+                for (let i = a; i < e; i++) s += 0.5 * (d(i) + d(i + 1));
+                return s; }); })"""
+    )
+    assert np.allclose(valley, expected, rtol=1e-9)
+    # close to the rolling ball on this clean blot, but not the same number
+    assert np.allclose(valley, rolling, rtol=0.15) and not np.allclose(valley, rolling, rtol=1e-4)
+    cells = page.locator("[data-t=results] tr").nth(1).locator("td").all_inner_texts()
+    assert [float(c) for c in cells] == pytest.approx(valley[0], rel=1e-4)
+
+    # the border decides: moved inwards, the line rises and the area shrinks
+    before = valley[0][0]
+    n = ui.state("WB.app.curves(b, b.session.lanes[0]).profile.length")
+    start, apex = ui.state("[b.session.lanes[0].peaks[0].start, b.session.lanes[0].peaks[0].apex]")
+    ui.drag(ui.on_plot(0, start), ui.on_plot(0, (start + apex) / 2))
+    after = ui.state("WB.app.results(b).rows[0][0]")
+    assert ui.state("b.session.lanes[0].peaks[0].start") == pytest.approx((start + apex) / 2, abs=2) and after < 0.9 * before
+    # detecting again finds the peaks although this background has none without them
+    ui.click("detect-all")
+    ui.flush()
+    assert ui.state("b.session.lanes.map((l) => l.peaks.length)") == [3] * 8
+    assert ui.state("WB.app.results(b).rows[0][0]") == pytest.approx(before, rel=1e-9)
+    # a double-click adds a peak here too
+    ui.state("(b.session.lanes[2].peaks.splice(1, 1), WB.app.changed('quant'))")
+    ui.flush()
+    page.mouse.dblclick(*ui.on_plot(2, 200))
+    ui.flush()
+    assert ui.state("b.session.lanes[2].peaks.length") == 3 and ui.state("WB.app.results(b).rows[2][1]") == pytest.approx(valley[2][1], rel=0.02)
+
+    # saved with the project
+    saved = ui.state("JSON.stringify(WB.project.serialize())")
+    ui.page.evaluate("(text) => WB.project.load(JSON.parse(text))", saved)
+    ui.flush()
+    assert ui.state("b.session.lanes[0].baseline.method") == "valley" and ui.state("WB.app.results(b).rows[0][0]") == pytest.approx(before, rel=1e-9)

@@ -15,7 +15,7 @@
     const bytes = crypto.getRandomValues(new Uint8Array(8));
     return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
   };
-  model.BASELINE_METHODS = ["none", "rolling", "linear", "manual"];
+  model.BASELINE_METHODS = ["none", "rolling", "linear", "manual", "valley"];
 
   model.baseline = () => ({
     method: "rolling",

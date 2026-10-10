@@ -362,3 +362,81 @@ def test_peak_numbering(app):
     got = app.evaluate("(l) => { WB.quant.numberPeaks(l); return [l.peaks.map((p) => [p.apex, p.band_id]), WB.quant.isNumberedInOrder(l)]; }", with_peaks(peaks))
     assert got == [[[15, 1], [65, 2]], True]
     assert app.evaluate("(l) => WB.quant.isNumberedInOrder(l)", with_peaks([{**peaks[0], "band_id": 7}])) is False
+
+
+VALLEY = make_baseline("valley")
+
+
+def test_valley_to_valley_background(app):
+    x = np.arange(200.0)
+    slope = 50 + 0.5 * x
+    band = 300 * np.exp(-0.5 * ((x - 80) / 6) ** 2)
+    profile = slope + band
+    peaks = [peak(60, 100, 80), peak(150, 170, 160)]
+    got = np.array(app.evaluate("([p, b, k]) => Array.from(WB.quant.computeBaseline(p, b, k))", [profile.tolist(), VALLEY, peaks]))
+    # under a peak: the straight line between the profile at its two borders; elsewhere the profile itself
+    line = profile[60] + (profile[100] - profile[60]) * (x[60:101] - 60) / 40
+    assert np.allclose(got[60:101], line) and np.allclose(got[:60], profile[:60]) and np.allclose(got[101:150], profile[101:150])
+    area = app.evaluate("([p, b, k]) => WB.quant.peakArea(p, WB.quant.computeBaseline(p, b, k), k[0])", [profile.tolist(), VALLEY, peaks])
+    assert area == pytest.approx(float(np.sum(profile[60:101] - line)), rel=1e-9)
+    # the slope under the band is taken off and the band is left: its amount, less the
+    # little that its tails still have at the borders
+    amount = 300 * 6 * np.sqrt(2 * np.pi)
+    assert 0.98 * amount < area < amount
+    # no peak, nothing measured; a stretch without a band has no area
+    assert np.allclose(app.evaluate("([p, b]) => Array.from(WB.quant.computeBaseline(p, b))", [profile.tolist(), VALLEY]), profile)
+    assert app.evaluate("([p, b, k]) => WB.quant.peakArea(p, WB.quant.computeBaseline(p, b, k), k[1])", [profile.tolist(), VALLEY, peaks]) == pytest.approx(0, abs=1e-6)
+    # where the profile dips under the line nothing is enclosed, so nothing is taken off
+    dip = profile.copy()
+    dip[88:96] -= 200
+    base = np.array(app.evaluate("([p, b, k]) => Array.from(WB.quant.computeBaseline(p, b, k))", [dip.tolist(), VALLEY, peaks]))
+    assert np.all(base <= dip + 1e-9) and np.allclose(base[88:96], dip[88:96])
+    area = app.evaluate("([p, b, k]) => WB.quant.peakArea(p, WB.quant.computeBaseline(p, b, k), k[0])", [dip.tolist(), VALLEY, peaks])
+    assert area == pytest.approx(float(np.sum(np.maximum(dip[60:101] - line, 0))), rel=1e-9)
+    # peaks are looked for on the rolling ball, which does not need them
+    search = app.evaluate("([p, b]) => Array.from(WB.quant.searchBaseline(p, b))", [profile.tolist(), VALLEY])
+    rolling = app.evaluate("([p, b]) => Array.from(WB.quant.computeBaseline(p, b))", [profile.tolist(), make_baseline("rolling")])
+    assert search == rolling
+    found = app.evaluate("([p, b]) => WB.quant.detectPeaks(p, WB.quant.searchBaseline(p, b))", [profile.tolist(), VALLEY])
+    assert [p["apex"] for p in found] == [80]
+
+
+def fiji_lane(rect):
+    x, y, width, height = rect
+    return lane(x + (width - 1) / 2, y - 0.5, y + height - 0.5, width)
+
+
+def test_profiles_are_those_of_fiji(app, real_blot, ref):
+    """Fiji's gel analyzer and this page take the same profile of a lane: the mean across its width."""
+    img = tifffile.imread(real_blot).astype(np.float32)
+    for index in (0, 3):
+        got = call(app, "(img, lane) => Array.from(WB.lanes.extractProfile(img, lane))", img, args=fiji_lane(ref["fiji"]["rects"][index]))
+        assert np.allclose(got, ref[f"fiji_profile_{index}"], rtol=1e-6)
+
+
+def test_valley_to_valley_areas_are_those_of_fiji(app, real_blot, ref):
+    """Fiji counts the pixels a peak encloses on its plot picture, so its areas are ours times the
+    scale of that picture, rounded to pixels: the smaller the region on the picture, the rougher."""
+    fiji = ref["fiji"]
+    img = tifffile.imread(real_blot).astype(np.float32)
+    scale = fiji["x_scale"] * fiji["y_scale"]
+    ratios, sizes = [], []
+    for index, rect in enumerate(fiji["rects"]):
+        mine = [p for p in fiji["peaks"] if p[0] == index]
+        peaks = [peak(a, b, (a + b) // 2) for _, a, b, _, _ in mine]
+        areas = call(
+            app,
+            """(img, [lane, peaks, b]) => { const profile = WB.lanes.extractProfile(img, lane);
+                const base = WB.quant.computeBaseline(profile, b, peaks);
+                return peaks.map((p) => WB.quant.peakArea(profile, base, p)); }""",
+            img,
+            args=[fiji_lane(rect), peaks, VALLEY],
+        )
+        ratios += [p[4] / (area * scale) for p, area in zip(mine, areas)]
+        sizes += [p[3] for p in mine]
+    ratios, sizes = np.array(ratios), np.array(sizes)
+    assert len(ratios) == 24
+    assert np.median(ratios) == pytest.approx(1, abs=0.015)
+    assert np.all(np.abs(ratios[sizes > 2000] - 1) < 0.03)
+    # regions of a few plot pixels are where Fiji's rounding shows; it always measures them smaller
+    assert np.all(ratios[sizes < 200] < 1) and np.all(np.abs(ratios - 1) < 0.3)

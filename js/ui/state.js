@@ -329,7 +329,7 @@
       profile = lanes.extractProfile(app.signal(blot), lane);
       blot.cache.profiles.set(key, profile);
     }
-    return { profile, baseline: quant.computeBaseline(profile, lane.baseline) };
+    return { profile, baseline: quant.computeBaseline(profile, lane.baseline, lane.peaks) };
   };
 
   app.results = function (blot) {
@@ -373,7 +373,8 @@
 
   // Add the peak under `position` of a lane's profile.
   app.addPeak = function (blot, lane, position) {
-    const { profile, baseline } = app.curves(blot, lane);
+    const { profile } = app.curves(blot, lane);
+    const baseline = quant.searchBaseline(profile, lane.baseline);
     const n = profile.length;
     const hw = Math.max(n / 40, 4);
     // stay clear of the peaks that are already marked

@@ -36,6 +36,10 @@ no server; the files can also be put on any web host.
 - **Lanes**: detect lanes (from the signal or evenly spaced, optionally inside a
   drawn gel area) and edit them on the blot: drag to move, handles for length,
   width and tilt, Delete to remove.
+- **Background**: per lane a rolling ball (default), one straight line, anchors
+  set by hand, or *valley to valley* as in Fiji: each peak is measured above
+  the straight line between its two borders, so there the borders decide the
+  result.
 - **Quantify**: one plot per lane. Drag a peak's borders, double-click to add a
   peak, right-click to remove one, Shift + double-click for background anchors.
   The table has one row per lane and one column per peak number. With
@@ -91,6 +95,31 @@ keep. If the browser stores nothing, the page says "Not stored" and works with
 project files only. Two tabs on the same project do not overwrite each other:
 the one that is behind stops saving and offers to reload or to keep its state
 as a copy.
+
+## Compared with Fiji's gel analyzer
+
+Checked against Fiji (ImageJ 1.54g) on the same lanes and peak borders;
+`test_core.py` keeps some of its numbers.
+
+| | Fiji | web_blot |
+|---|---|---|
+| Lanes | rectangles, all the size of the first, not tilted | each its own size, tilt possible |
+| Profile | mean across the lane's width | the same: identical numbers for untilted lanes |
+| Values | linear, unless "Uncalibrated OD" is ticked | linear |
+| Background | straight lines drawn by hand, usually valley to valley | rolling ball, straight line, anchors, or valley to valley |
+| Area | pixels enclosed on the plot picture + half the perimeter | sum of profile minus background, in intensity x px |
+
+With the valley-to-valley background and the same borders, Fiji's area is
+web_blot's times the scale of Fiji's plot picture, which is one number for all
+lanes of a Fiji session and so cancels when bands are normalised within a gel.
+What remains is Fiji's rounding to plot pixels: about 1 % for ordinary peaks,
+and 5 to 30 % too small for peaks that are only a few pixels high on its plot.
+The rolling ball gives other numbers than valley to valley, by a few per cent
+for separate bands on a flat background and by tens of per cent for bands that
+sit on a slope or close together.
+
+With "Uncalibrated OD" ticked, Fiji reduces the image to 8 bits and takes a
+logarithm of the profile; that is not a constant factor and is not reproduced here.
 
 ## Files
 

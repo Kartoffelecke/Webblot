@@ -60,9 +60,28 @@
     return [num.mean(profile.slice(0, k)), num.mean(profile.slice(n - k))];
   };
 
-  quant.computeBaseline = function (profile, baseline) {
+  // Valley to valley, as the lines drawn in Fiji's gel analyzer: under each
+  // peak the background is the straight line from the profile at one border to
+  // the profile at the other, and the area measured is what the profile
+  // encloses above that line. Where the profile dips below the line there is
+  // nothing enclosed, so the background follows the profile there, as it does
+  // outside the peaks.
+  function valleyBaseline(profile, peaks) {
+    const out = Float64Array.from(profile);
+    for (const peak of peaks) {
+      const [a, b] = quant.peakBounds(peak, profile.length);
+      for (let i = a + 1; i < b; i++)
+        out[i] = Math.min(profile[i], profile[a] + ((profile[b] - profile[a]) * (i - a)) / (b - a));
+    }
+    return out;
+  }
+
+  // The background of a profile. `peaks` are the lane's peaks; only the
+  // valley-to-valley background depends on them.
+  quant.computeBaseline = function (profile, baseline, peaks = []) {
     const n = profile.length;
     if (baseline.method === "rolling") return rollingBaseline(profile, baseline.radius);
+    if (baseline.method === "valley") return valleyBaseline(profile, peaks);
     const out = new Float64Array(n);
     if (baseline.method === "linear") {
       const [left, right] = baseline.linear_ends || quant.linearEnds(profile);
@@ -75,6 +94,11 @@
     }
     return out;
   };
+
+  // The background that peaks are looked for on. Valley to valley has none
+  // before there are peaks, so the rolling ball stands in for it.
+  quant.searchBaseline = (profile, baseline) =>
+    baseline.method === "valley" ? rollingBaseline(profile, baseline.radius) : quant.computeBaseline(profile, baseline);
 
   // Sample a computed baseline into editable anchor points.
   quant.baselineToAnchors = function (curve, nAnchors = 8) {

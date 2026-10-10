@@ -15,6 +15,7 @@
     ["rolling", "Rolling ball"],
     ["linear", "Straight line"],
     ["manual", "Manual anchors"],
+    ["valley", "Valley to valley (as in Fiji)"],
   ];
 
   // -------------------------------------------------------------------- plots
@@ -218,8 +219,8 @@
   quantify.detect = function (blot, all) {
     const list = all ? blot.session.lanes : [blot.session.lanes[state.lane]].filter(Boolean);
     for (const lane of list) {
-      const { profile, baseline } = app.curves(blot, lane);
-      lane.peaks = quant.detectPeaks(profile, baseline, { prominence: options.prominencePct / 100 });
+      const { profile } = app.curves(blot, lane);
+      lane.peaks = quant.detectPeaks(profile, quant.searchBaseline(profile, lane.baseline), { prominence: options.prominencePct / 100 });
       quant.numberPeaks(lane);
     }
     app.changed("quant");
@@ -281,8 +282,10 @@
           b.method = v;
           changed();
         })),
-        dom.row("Radius", dom.number(b.radius, { t: "bg-radius", min: 2, max: 2000, step: 1, disabled: b.method !== "rolling" },
+        dom.row("Radius", dom.number(b.radius, { t: "bg-radius", min: 2, max: 2000, step: 1, disabled: b.method !== "rolling" && b.method !== "valley" },
           (v) => { b.radius = v; changed(); }), "px"),
+        b.method === "valley" ? dom.el("p", { class: "hint", "data-t": "valley-hint" },
+          "Each peak is measured above the straight line between its two borders, so the borders decide the result: drag them into the valleys. The radius is only used to find peaks.") : null,
         dom.row("Line start / end",
           dom.number(Math.round(ends[0]), { t: "bg-line-start", step: 1, disabled: !isLine }, (v) => { b.linear_ends = [v, ends[1]]; changed(); }),
           dom.number(Math.round(ends[1]), { t: "bg-line-end", step: 1, disabled: !isLine }, (v) => { b.linear_ends = [ends[0], v]; changed(); }),
