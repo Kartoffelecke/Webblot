@@ -22,16 +22,13 @@
     return cur;
   }
 
-  // Rotate with canvas expansion; corners are filled with the median
-  // (scipy.ndimage.rotate, reshape=True, order=1, mode="constant").
-  processing.rotate = function (img, angleDeg) {
-    const angle = ((angleDeg % 360) + 360) % 360;
-    if (angle === 0) return img;
-    if (angle % 90 === 0) return rot90(img, angle / 90);
-    const rad = (angle * Math.PI) / 180;
+  // How a w x h image lies in its rotated picture: the picture's size, and the
+  // numbers that take a point of the picture to the point of the image it shows:
+  // [c * y + s * x + offY, -s * y + c * x + offX].
+  function frame(w, h, angleDeg) {
+    const rad = (((angleDeg % 360) + 360) % 360) * (Math.PI / 180);
     const c = Math.cos(rad);
     const s = Math.sin(rad);
-    const { w, h, data } = img;
     // bounds of the rotated input plane
     const ys = [0, s * w, c * h, c * h + s * w];
     const xs = [0, c * w, -s * h, -s * h + c * w];
@@ -39,8 +36,34 @@
     const ow = Math.floor(num.max(xs) - num.min(xs) + 0.5);
     const cy = (oh - 1) / 2;
     const cx = (ow - 1) / 2;
-    const offY = (h - 1) / 2 - (c * cy + s * cx);
-    const offX = (w - 1) / 2 - (-s * cy + c * cx);
+    return { c, s, ow, oh, offY: (h - 1) / 2 - (c * cy + s * cx), offX: (w - 1) / 2 - (-s * cy + c * cx) };
+  }
+
+  // { w, h } of a w x h image rotated by an angle
+  processing.rotatedSize = function (w, h, angleDeg) {
+    const f = frame(w, h, angleDeg);
+    return { w: f.ow, h: f.oh };
+  };
+
+  // The point [y, x] of a w x h image that a point of its rotated picture shows, and back.
+  processing.fromRotated = function (w, h, angleDeg, [y, x]) {
+    const f = frame(w, h, angleDeg);
+    return [f.c * y + f.s * x + f.offY, -f.s * y + f.c * x + f.offX];
+  };
+
+  processing.toRotated = function (w, h, angleDeg, [y, x]) {
+    const f = frame(w, h, angleDeg);
+    return [f.c * (y - f.offY) - f.s * (x - f.offX), f.s * (y - f.offY) + f.c * (x - f.offX)];
+  };
+
+  // Rotate with canvas expansion; corners are filled with the median
+  // (scipy.ndimage.rotate, reshape=True, order=1, mode="constant").
+  processing.rotate = function (img, angleDeg) {
+    const angle = ((angleDeg % 360) + 360) % 360;
+    if (angle === 0) return img;
+    if (angle % 90 === 0) return rot90(img, angle / 90);
+    const { w, h, data } = img;
+    const { c, s, ow, oh, offY, offX } = frame(w, h, angle);
     const fill = num.median(data);
     const out = processing.image(ow, oh);
     for (let oy = 0; oy < oh; oy++) {

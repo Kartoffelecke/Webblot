@@ -226,7 +226,7 @@
     app.changed("quant");
   };
 
-  // The table as it is reported: areas, or with "Normalize across samples"
+  // The table as it is reported: areas, or with "Normalize across lanes"
   // each band relative to the lane in which it is largest.
   quantify.table = (blot) => {
     const { bands, rows } = app.results(blot);
@@ -275,7 +275,17 @@
     return [
       dom.group("Lane",
         dom.row("Current", dom.number(state.lane + 1, { t: "current-lane", min: 1, max: list.length, step: 1, width: 56 },
-          (v) => app.select(blot.id, num.clip(Math.round(v), 1, list.length) - 1)), `of ${list.length}`)),
+          (v) => app.select(blot.id, num.clip(Math.round(v), 1, list.length) - 1)), `of ${list.length}`),
+        dom.row("Position", dom.number(Math.round(lane.x_center * 10) / 10, { t: "lane-x", step: 1 }, (v) => {
+          lane.x_center = v;
+          app.sortLanes(blot); // lanes are numbered left to right
+          app.changed("lanes", "panel");
+        }), "px from the left"),
+        dom.row("Tilt", dom.number(Math.round(lane.tilt_deg * 10) / 10, { t: "quantify-tilt", min: -30, max: 30, step: 0.5 }, (v) => {
+          lane.tilt_deg = num.clip(v, -30, 30);
+          app.changed("lanes");
+        }), "°"),
+        dom.el("p", { class: "hint" }, "Or on the blot: drag the lane to move it, and its handles for length, width and tilt.")),
       dom.group("Background",
         dom.row("Method", dom.select(METHOD_LABELS, b.method, "bg-method", (v) => {
           if (v === "manual" && !b.anchors.length) b.anchors = quant.baselineToAnchors(baseline);
@@ -316,7 +326,7 @@
           dom.el("tr", {}, ["Use", "Peak #", "Start", "End", "Area", ""].map((h) => dom.el("th", {}, h))),
           peakRows)),
       dom.group("Band areas (rows: lanes, columns: peaks)",
-        dom.row(null, dom.check("Normalize across samples", state.normalize, "normalize", (v) => {
+        dom.row(null, dom.check("Normalize across lanes", state.normalize, "normalize", (v) => {
           state.normalize = v;
           changed();
         }, "Divide each peak by its largest area among the lanes, so that every column runs from 0 to 1. Applies to the table, Copy and the CSV of every blot.")),

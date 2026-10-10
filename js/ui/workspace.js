@@ -282,7 +282,8 @@
         }
       }
 
-      if (current && state.tab === "lanes") {
+      // the current lane is adjusted where lanes are marked and where they are measured
+      if (current && (state.tab === "lanes" || state.tab === "quantify")) {
         const len = lanes.length(lane);
         const top = lanes.point(lane, 0);
         const bottom = lanes.point(lane, len);
@@ -470,7 +471,7 @@
     const [start, end] = blot.pending.level;
     const delta = processing.levelingAngle(start, end);
     const angle = ((blot.session.transform.rotation_deg + delta + 180) % 360 + 360) % 360 - 180;
-    app.setRotation(blot, Math.round(angle * 100) / 100);
+    app.setRotation(blot, Math.round(angle * 100) / 100, true); // a cropped blot stays cropped
     app.changed("panel");
   };
 

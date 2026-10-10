@@ -46,10 +46,11 @@ no server; the files can also be put on any web host.
   not that hump is a peak of its own. A double band is therefore measured as
   two peaks, or as its first hump only; to measure it as one, drag the border
   or give both peaks the same number.
-- **Quantify**: one plot per lane. Drag a peak's borders, double-click to add a
+- **Quantify**: one plot per lane. The current lane can still be moved and
+  tilted here, on the blot or by number, and its plot follows. Drag a peak's borders, double-click to add a
   peak, right-click to remove one, Shift + double-click for background anchors.
   The table has one row per lane and one column per peak number. With
-  *Normalize across samples* ticked, each peak is divided by its largest area
+  *Normalize across lanes* ticked, each peak is divided by its largest area
   among the lanes, so every column runs up to 1; this applies to the table,
   Copy and the CSV, and is saved with the project. *Copy* puts the numbers on
   the clipboard for pasting into a spreadsheet; tick *Copy headers* to include

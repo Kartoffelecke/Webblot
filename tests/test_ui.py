@@ -1717,3 +1717,103 @@ def test_valley_to_valley_background_in_the_quantify_tab(quantified):
     ui.page.evaluate("(text) => WB.project.load(JSON.parse(text))", saved)
     ui.flush()
     assert ui.state("b.session.lanes[0].baseline.method") == "valley" and ui.state("WB.app.results(b).rows[0][0]") == pytest.approx(before, rel=1e-9)
+
+
+def test_lane_position_and_tilt_are_adjusted_in_the_quantify_tab(quantified):
+    ui = quantified
+    page = ui.page
+    card = page.locator("[data-t=card]").first
+    ui.state("(WB.app.select(b.id, 2), 0)")
+    ui.flush()
+    # the current lane has its handles here as on the Lanes tab
+    for name in ("handle-lane-tilt", "handle-lane-top", "handle-lane-bottom", "handle-lane-width"):
+        assert card.locator(f"[data-t={name}]").count() == 1
+    lane = ui.state("b.session.lanes[2]")
+    profile = ui.state("Array.from(WB.app.curves(b, b.session.lanes[2]).profile)")
+    shown = page.locator("svg.plot").nth(2).locator("[data-t=profile]").get_attribute("d")
+    assert float(ui.t("lane-x").input_value()) == pytest.approx(lane["x_center"], abs=0.06) and ui.t("quantify-tilt").input_value() == "0"
+
+    # tilt with the knob above the lane: the lane is measured along its new direction
+    knob = ui.rect(card.locator("[data-t=handle-lane-tilt]"))
+    start = [knob["x"] + knob["width"] / 2, knob["y"] + knob["height"] / 2]
+    ui.drag(start, [start[0] + 25, start[1]])
+    tilt = ui.state("b.session.lanes[2].tilt_deg")
+    assert tilt < -2 and float(ui.t("quantify-tilt").input_value()) == pytest.approx(tilt, abs=0.06)
+    tilted = ui.state("Array.from(WB.app.curves(b, b.session.lanes[2]).profile)")
+    assert not np.allclose(tilted, profile) and page.locator("svg.plot").nth(2).locator("[data-t=profile]").get_attribute("d") != shown
+    assert page.locator("svg.plot").count() == 8 and ui.state("b.session.lanes[2].peaks.length") == 3
+    # and by number
+    ui.set("quantify-tilt", 0)
+    assert ui.state("b.session.lanes[2].tilt_deg") == 0
+    assert np.allclose(ui.state("Array.from(WB.app.curves(b, b.session.lanes[2]).profile)"), profile)
+
+    # move: by dragging the lane on the blot, and by number
+    y = (lane["y0"] + lane["y1"]) / 2
+    ui.drag_on_card(0, (y, lane["x_center"]), (y, lane["x_center"] + 12))
+    assert ui.state("[b.session.lanes[2].x_center, b.session.lanes[2].y0]") == pytest.approx([lane["x_center"] + 12, lane["y0"]], abs=2)
+    moved = ui.state("WB.app.results(b).rows[2]")
+    ui.set("lane-x", round(lane["x_center"], 1))
+    assert ui.state("b.session.lanes[2].x_center") == pytest.approx(lane["x_center"], abs=0.06)
+    back = ui.state("WB.app.results(b).rows[2]")
+    assert back != moved and float(page.locator("[data-t=results] tr").nth(3).locator("td").first.inner_text()) == pytest.approx(back[0], rel=1e-4)
+    # a lane moved past its neighbour keeps being the current one, under its new number
+    ui.set("lane-x", lane["x_center"] + 100)
+    assert ui.state("s.lane") == 3 and ui.t("current-lane").input_value() == "4"
+    assert ui.state("b.session.lanes.map((l) => l.x_center)") == sorted(ui.state("b.session.lanes.map((l) => l.x_center)"))
+
+
+def test_straightening_keeps_the_crop(ui, tmp_path):
+    # a band that runs slightly uphill, and a bright dot to recognise a place by
+    yy, xx = np.mgrid[:300, :500].astype(float)
+    img = 1000 * np.exp(-0.5 * ((yy - (150 + 0.08 * (xx - 250))) / 3) ** 2) + 3000 * np.exp(-0.5 * (((yy - 100) / 2) ** 2 + ((xx - 300) / 2) ** 2))
+    path = tmp_path / "tilted.tif"
+    tifffile.imwrite(path, img.astype(np.uint16))
+    ui.add_files(path)
+    ui.state("(WB.app.setCrop(b, [60, 150, 220, 420]), b.session.lanes = [{ x_center: 100, y0: 9.5, y1: 139.5, width: 30, tilt_deg: 0, baseline: WB.model.baseline(), peaks: [] }], WB.app.changed('lanes'))")
+    ui.flush()
+    brightest = """(() => { const { w, data } = b.work.wb; let best = 0; for (let i = 0; i < data.length; i++) if (data[i] > data[best]) best = i; return [Math.floor(best / w), best % w]; })()"""
+    assert ui.state("[b.work.wb.w, b.work.wb.h]") == [270, 160] and ui.state(brightest) == [40, 150]
+
+    ui.click("tool-level")
+    ui.flush()
+    ui.drag_on_card(0, (90 - 0.08 * 100, 35), (90 + 0.08 * 100, 235))  # along the band, in the cropped image
+    ui.click("level-apply")
+    ui.flush()
+    angle = ui.state("b.session.transform.rotation_deg")
+    assert angle == pytest.approx(np.degrees(np.arctan(0.08)), abs=0.4)
+    # still cropped, to the same size, around the same place
+    crop = ui.state("b.session.transform.crop")
+    assert crop is not None and [crop[3] - crop[1], crop[2] - crop[0]] == [270, 160] == ui.state("[b.work.wb.w, b.work.wb.h]")
+    spot = ui.state(brightest)
+    assert spot == pytest.approx([40, 150], abs=5)  # 12 px from the middle of the crop, turned by 4.6 degrees
+    # the band is level now, inside the crop
+    ridge = ui.state(
+        """(() => { const { w, h, data } = b.work.wb; const out = [];
+            for (let x = 20; x < 130; x += 10) { let best = 0; for (let y = 60; y < h; y++) if (data[y * w + x] > data[best * w + x]) best = y; out.push(best); }
+            return out; })()"""
+    )
+    assert max(ridge) - min(ridge) <= 2
+    # lanes stay where they were in the cropped image
+    assert ui.state("[b.session.lanes[0].x_center, b.session.lanes[0].y0]") == [100, 9.5]
+    assert "cropped" in ui.page.locator("[data-t=dim]").inner_text()
+
+    # reset the crop: the whole straightened image, the dot where the turn puts it
+    ui.click("crop-reset")
+    ui.flush()
+    assert ui.state("b.session.transform.crop") is None
+    whole = ui.state(brightest)
+    assert [whole[0] - crop[0], whole[1] - crop[1]] == spot
+    # setting the angle by number still resets the crop
+    ui.state("(WB.app.setCrop(b, [60, 150, 220, 420]), 0)")
+    ui.set("angle", 2)
+    assert ui.state("b.session.transform.crop") is None
+
+    # straightening back at the edge: the crop is moved inside the image rather than cut
+    ui.state("(WB.app.setRotation(b, 10), WB.app.setCrop(b, [0, 0, 100, 120]), WB.app.setRotation(b, 0, true), 0)")
+    ui.flush()
+    crop = ui.state("b.session.transform.crop")
+    assert ui.state("[b.work.wb.w, b.work.wb.h]") == [120, 100] and crop[0] >= 0 and crop[1] >= 0 and crop[2] <= 300 and crop[3] <= 500
+    # the two directions of the point mapping are each other's inverse, and agree with the rotated picture
+    back = ui.state("WB.processing.fromRotated(500, 300, 7.5, WB.processing.toRotated(500, 300, 7.5, [100, 300]))")
+    assert back == pytest.approx([100, 300], abs=1e-9)
+    assert ui.state("(() => { const s = WB.processing.rotatedSize(500, 300, 7.5), r = WB.processing.rotate({ w: 500, h: 300, data: new Float32Array(150000) }, 7.5); return [s.w === r.w, s.h === r.h]; })()") == [True, True]

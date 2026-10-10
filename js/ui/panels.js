@@ -71,7 +71,7 @@
           dom.button("Reset crop", "crop-reset", () => app.setCrop(blot, null), "Show the whole image again.")),
         blot.pending.crop ? dom.el("p", { class: "hint" },
           "Move the rectangle or drag its corners, then press Apply crop. New blot from area keeps this blot whole and the rectangle in place, for cutting one image into several blots.") : null,
-        dom.el("p", { class: "hint" }, "Changing the rotation resets the crop. Lanes are not rotated with the image, so straighten first.")),
+        dom.el("p", { class: "hint" }, "Straighten keeps the crop; setting the angle or turning by 90° resets it. Lanes are not rotated with the image, so straighten first.")),
       dom.group("Signal",
         dom.check("Bands are dark in the file", t.bands_dark, "bands-dark", (v) => {
           t.bands_dark = v;
