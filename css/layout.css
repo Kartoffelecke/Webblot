@@ -1,0 +1,162 @@
+/* The page: header, steps, blots, lower panel, inspector. */
+#app { display: flex; flex-direction: column; height: 100%; }
+
+/* ---- header ---- */
+header.topbar { display: flex; align-items: center; gap: var(--s2); height: 48px; padding: 0 var(--s4); background: var(--surface); border-bottom: 1px solid var(--border); flex: none; }
+.brand { font-weight: 700; font-size: var(--text-l); letter-spacing: -0.01em; display: inline-flex; align-items: center; gap: 8px; margin-right: var(--s2); }
+.brand-mark { width: 22px; height: 22px; border-radius: 6px; background: var(--stage); display: grid; place-items: center; }
+.brand-mark i { display: block; width: 12px; height: 3px; border-radius: 2px; background: #fff; box-shadow: 0 5px 0 rgba(255, 255, 255, 0.55), 0 -5px 0 rgba(255, 255, 255, 0.8); }
+input.project-name { width: 220px; font-weight: 600; border-color: transparent; background: transparent; }
+input.project-name:hover { border-color: var(--border-strong); }
+.save-status { color: var(--text-3); font-size: var(--text-s); display: inline-flex; align-items: center; gap: 6px; }
+.save-status.saved::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+.save-status.saving::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--text-3); }
+.save-status.failed { color: var(--danger); font-weight: 600; }
+.save-status button { height: 22px; font-weight: 400; }
+.spacer { flex: 1; }
+
+/* ---- steps ---- */
+nav.steps { display: flex; align-items: center; gap: var(--s2); height: 44px; padding: 0 var(--s4); background: var(--surface); border-bottom: 1px solid var(--border); flex: none; }
+.stepper { display: flex; align-items: center; gap: 2px; }
+.stepper > svg.i { color: var(--border-strong); width: 14px; height: 14px; }
+button.step { height: 32px; padding: 0 12px 0 6px; border-color: transparent; background: transparent; color: var(--text-2); gap: 8px; border-radius: 16px; }
+button.step:hover { background: var(--surface-3); color: var(--text); }
+button.step .n { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 700; background: var(--surface-3); color: var(--text-2); }
+button.step.done .n { background: var(--ok-soft); color: var(--ok); }
+button.step.done .n svg.i { width: 12px; height: 12px; stroke-width: 2.5; }
+button.step.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; border-color: transparent; }
+button.step.active .n { background: var(--accent); color: var(--accent-text); }
+.view-controls { display: flex; align-items: center; gap: var(--s3); color: var(--text-2); }
+.view-controls label { display: inline-flex; align-items: center; gap: 6px; }
+.view-controls input[type="range"] { width: 110px; }
+.divider { width: 1px; height: 20px; background: var(--border); }
+
+/* ---- body ---- */
+#body { display: flex; flex: 1; min-height: 0; }
+main { flex: 1; min-width: 0; overflow: auto; padding: 10px; }
+/* Quantify and Figure: blots above, plots or figure below, each scrolling on its own */
+main.split { display: flex; flex-direction: column; overflow: hidden; }
+main.split #workspace { flex: 0 1 auto; max-height: 45%; overflow: auto; padding: 2px; }
+main.split #lower { flex: 1 1 0; min-height: 0; }
+/* the lower panel was given a height: the blots take the rest */
+main.split.sized #workspace { flex: 1 1 0; max-height: none; min-height: 0; }
+main.split.sized #lower { flex: 0 0 auto; }
+#side { width: 400px; flex: none; overflow: auto; background: var(--surface); padding-bottom: 40px; }
+#body.no-blots #side, #body.no-blots #side-bar { display: none; }
+.side-head { padding: var(--s3) var(--s4); border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--surface); z-index: 3; }
+.side-head .step-title { font-size: var(--text-s); text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-3); font-weight: 600; }
+.selected-name { font-weight: 700; font-size: var(--text-l); margin: 1px 0 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-head .lead { color: var(--text-2); font-size: var(--text-s); line-height: 1.45; }
+.side-foot { padding: var(--s4); display: flex; justify-content: flex-end; }
+
+/* ---- the lower panel (lane plots, figure preview): a surface of its own ---- */
+#lower { display: none; }
+main.split #lower { display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-1); }
+#lower-title { flex: none; padding: 8px var(--s3); font-weight: 600; border-bottom: 1px solid var(--border); border-radius: var(--radius) var(--radius) 0 0; }
+#lower-body { flex: 1 1 0; min-height: 0; overflow: auto; padding: var(--s2) var(--s3); }
+
+/* bars that are dragged to resize the panels */
+.dragbar { flex: none; background: transparent; position: relative; touch-action: none; }
+.dragbar::after { content: ""; position: absolute; background: var(--border-strong); border-radius: 2px; transition: background 0.1s; }
+.dragbar:hover::after, body.resizing .dragbar::after { background: var(--accent); }
+#side-bar { width: 7px; cursor: col-resize; background: var(--surface); border-left: 1px solid var(--border); }
+#side-bar::after { left: 2px; top: calc(50% - 16px); width: 2px; height: 32px; }
+#lower-bar { display: none; height: 11px; cursor: row-resize; }
+main.split #lower-bar { display: block; }
+#lower-bar::after { top: 4px; left: calc(50% - 20px); height: 3px; width: 40px; }
+body.resizing { user-select: none; -webkit-user-select: none; }
+
+/* ---- first use ---- */
+.welcome { margin: 7vh auto 0; max-width: 620px; padding: 40px 32px; text-align: center; border: 2px dashed var(--border-strong); border-radius: 16px; background: var(--surface); }
+.welcome h1 { font-size: var(--text-xl); margin-bottom: 6px; }
+.welcome p { color: var(--text-2); margin-bottom: var(--s5); line-height: 1.5; }
+.welcome .choices { display: flex; gap: var(--s2); justify-content: center; flex-wrap: wrap; }
+.welcome .choices button { height: 36px; padding: 0 16px; }
+.welcome .steps-preview { margin-top: var(--s5); color: var(--text-3); font-size: var(--text-s); }
+body.dropping .welcome, body.dropping main { outline: 2px solid var(--accent); outline-offset: -6px; }
+
+/* ---- blots ---- */
+#workspace { display: flex; flex-wrap: wrap; gap: var(--s3); align-items: flex-start; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--s2); box-shadow: var(--shadow-1); outline: 2px solid transparent; outline-offset: -1px; transition: outline-color 0.1s; }
+.card.selected { outline-color: var(--accent); border-color: var(--accent); }
+.card-head { display: flex; align-items: center; gap: 4px; margin-bottom: 6px; }
+.card-head .name { flex: 1; min-width: 60px; font-weight: 600; border-color: transparent; background: transparent; padding: 0 6px; }
+.card-head .name:hover { border-color: var(--border-strong); }
+.card-head button.icon { border-color: transparent; background: transparent; color: var(--text-3); }
+.card-head button.icon:hover { background: var(--surface-3); color: var(--text); }
+.dim { color: var(--text-3); font-size: var(--text-s); white-space: nowrap; padding: 0 4px; }
+.grip { cursor: grab; color: var(--text-3); padding: 4px 2px; user-select: none; -webkit-user-select: none; display: inline-flex; border-radius: 4px; }
+.grip:hover { background: var(--surface-3); color: var(--text); }
+.zoom { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius-s); overflow: hidden; margin: 0 4px; }
+.zoom button { height: 24px; border: 0; border-radius: 0; background: transparent; color: var(--text-2); padding: 0 6px; }
+.zoom button.icon { width: 24px; }
+.zoom [data-t="zoom-reset"] { min-width: 48px; font-size: var(--text-s); font-variant-numeric: tabular-nums; border-left: 1px solid var(--border); border-right: 1px solid var(--border); }
+.stage { position: relative; line-height: 0; background: var(--stage); border-radius: 3px; }
+.stage canvas { position: absolute; width: 100%; height: auto; image-rendering: pixelated; }
+.stage svg.overlay { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+/* a zoomed blot: the stage cuts off what is outside the view */
+.stage.zoomed { overflow: hidden; }
+.stage.zoomed svg.overlay { overflow: hidden; cursor: grab; }
+.stage.zoomed svg.overlay.panning { cursor: grabbing; }
+.card.drawing svg.overlay { cursor: crosshair; }
+.overlay .shape { fill: transparent; }
+.overlay .lane { cursor: move; }
+.overlay .note { pointer-events: none; }
+.overlay .marker-text { paint-order: stroke; stroke: rgba(0, 0, 0, 0.6); stroke-width: 2.5px; font-weight: 600; }
+.overlay .handle { fill: #fff; stroke: #ff7a00; stroke-width: 2; }
+.card-controls { margin-top: 6px; }
+.exposure { display: flex; align-items: center; gap: var(--s2); margin-top: 4px; flex-wrap: wrap; color: var(--text-2); font-size: var(--text-s); }
+.exposure-label { font-weight: 600; color: var(--text); }
+.exposure-label:not(:empty) { min-width: 70px; }
+.exposure label { display: inline-flex; align-items: center; gap: 4px; }
+.exposure input[type="range"] { width: 84px; }
+.exposure input[type="number"] { height: 24px; font-size: var(--text-s); padding: 0 5px; }
+.exposure button { height: 24px; font-size: var(--text-s); }
+/* dragging a blot: onto an image to use it as the brightfield, elsewhere to reorder */
+.card.drop-merge .stage { outline: 3px solid var(--ok); outline-offset: -3px; }
+.card.drop-merge .stage::after { content: "Use as brightfield"; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); background: var(--ok); color: #fff; padding: 5px 12px; border-radius: 14px; line-height: 1.3; font-weight: 600; pointer-events: none; }
+.card.drop-before { box-shadow: -5px 0 0 var(--accent); }
+.card.drop-after { box-shadow: 5px 0 0 var(--accent); }
+
+/* ---- lane plots ---- */
+svg.plot { display: block; width: 100%; background: var(--surface); margin-bottom: 6px; border: 1px solid var(--border); border-radius: var(--radius-s); user-select: none; -webkit-user-select: none; }
+svg.plot.current { border-color: var(--accent); }
+.lane-mark { fill: transparent; }
+svg.plot.current .lane-mark { fill: var(--accent); }
+.plot-bg { fill: var(--surface-2); }
+.plot-title { fill: var(--text-2); font-size: 11px; font-weight: 600; }
+svg.plot.current .plot-title { fill: var(--accent); }
+.plot-tick { fill: var(--text-3); font-size: 10px; }
+.profile { fill: none; stroke: var(--text); stroke-width: 1.4; pointer-events: none; }
+.baseline { fill: none; stroke: var(--plot-baseline); stroke-width: 1.4; stroke-dasharray: 5 3; pointer-events: none; }
+.peak-region { fill: var(--accent); fill-opacity: 0.07; }
+.peak-region.unused { fill: var(--text-3); fill-opacity: 0.07; }
+.peak-fill { fill: var(--plot-fill); pointer-events: none; }
+.peak-fill.unused { fill: var(--plot-fill-unused); }
+.peak-border { stroke: var(--accent); stroke-width: 5; stroke-opacity: 0.55; cursor: ew-resize; }
+.peak-border:hover { stroke-opacity: 0.9; }
+.peak-border.unused { stroke: var(--text-3); }
+.peak-number { fill: var(--accent); font-size: 11px; font-weight: 700; pointer-events: none; }
+.anchor { fill: var(--surface); stroke: var(--plot-baseline); stroke-width: 2; cursor: grab; }
+
+/* ---- figure preview: always on white, as it will be printed ---- */
+.preview { background: #fff; border: 1px solid var(--border); border-radius: var(--radius-s); padding: var(--s4); display: inline-block; }
+
+/* ---- projects ---- */
+dialog.library { width: min(920px, 94vw); }
+.library-actions { display: flex; gap: var(--s2); flex-wrap: wrap; margin-bottom: var(--s3); }
+table.library-list { width: 100%; }
+table.library-list th { text-align: left; }
+table.library-list td { text-align: left; }
+table.library-list td.wrap { white-space: normal; color: var(--text-2); }
+table.library-list td.actions { white-space: nowrap; }
+table.library-list td.actions > * { margin-right: 4px; }
+table.library-list td.actions button { height: 24px; }
+table.library-list tr.current td { background: var(--accent-soft); }
+table.library-list input { width: 100%; min-width: 150px; border-color: transparent; background: transparent; font-weight: 600; }
+table.library-list input:hover { border-color: var(--border-strong); }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 10px; background: var(--accent); color: var(--accent-text); font-size: 11px; font-weight: 600; }
+
+.fatal { margin: 40px auto; max-width: 560px; padding: 20px 26px; background: var(--surface); border: 2px solid var(--danger); border-radius: var(--radius); }
+.fatal h1 { font-size: 18px; margin: 0 0 8px; color: var(--danger); }
+.fatal p, .fatal ul { margin: 8px 0; }

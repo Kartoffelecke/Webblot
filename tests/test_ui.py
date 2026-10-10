@@ -639,7 +639,15 @@ def test_blots_can_be_removed_and_reordered(ui, blot_files):
     ui.flush()
     assert ui.state("s.blots.map((b) => b.name)") == ["control", "target"]
     assert ui.page.locator("[data-t=card] [data-t=blot-name]").nth(0).input_value() == "control"
-    ui.page.once("dialog", lambda d: d.accept())
+    ui.click("blot-remove", 0)
+    ui.flush()
+    assert ui.state("s.blots.map((b) => b.name)") == ["target"] and ui.state("b.labels") is True
+    # no question is asked: the message offers the way back
+    assert "control" in ui.t("toast").inner_text()
+    ui.click("toast-action")
+    ui.flush()
+    assert ui.state("s.blots.map((b) => [b.name, b.labels])") == [["control", False], ["target", True]]
+    assert ui.page.locator("[data-t=card]").count() == 2 and ui.t("toast").count() == 0
     ui.click("blot-remove", 0)
     ui.flush()
     assert ui.state("s.blots.map((b) => b.name)") == ["target"] and ui.state("b.labels") is True
@@ -834,9 +842,8 @@ def test_brightfield_overlay_with_its_own_exposure(ui, blot_files, blot, tmp_pat
     ui.flush()
     assert ui.state("JSON.stringify(WB.project.serialize())") == saved
     ui.tab("prepare")
-    page.once("dialog", lambda d: d.accept())
     ui.click("bf-remove")
-    ui.flush()
+    assert "brightfield" in ui.confirm()
     assert ui.state("b.raw.bf") is None and page.locator("[data-t=bf-show]").count() == 0
     assert page.locator("[data-t=card] .exposure").count() == 1
 

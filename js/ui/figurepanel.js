@@ -179,13 +179,13 @@
             "data-r": r, "data-c": i + 1,
           }))),
         dom.el("td", {},
-          dom.button("⇥", "label-fill", () => {
+          dom.icon("fill", "label-fill", () => {
             // repeat each entry to the right until the next one that is filled in
             let last = "";
             row.values = row.values.map((v) => (v ? (last = v) : last));
             app.changed("figure", "panel");
-          }, "Fill empty cells with the entry to their left"),
-          dom.button("×", "label-remove", () => { fig.label_rows.splice(r, 1); app.changed("figure", "panel"); }, "Remove this row")));
+          }, "Fill empty cells with the entry to their left", "small"),
+          dom.icon("close", "label-remove", () => { fig.label_rows.splice(r, 1); app.changed("figure", "panel"); }, "Remove this row", "small")));
     });
     return dom.el("div", { class: "scroll-x" },
       sheet(dom.el("table", { class: "grid labels", "data-t": "labels" },
@@ -237,7 +237,7 @@
             changed();
           }), k, 0)),
           dom.el("td", {}, cell(dom.text(m.text, `${t}-text`, (v) => { m.text = v; app.changed("figure"); }, { class: "wide", placeholder }), k, 1)),
-          dom.el("td", {}, dom.button("×", `${t}-remove`, () => { list.splice(k, 1); changed(); }, "Remove this marker"))))),
+          dom.el("td", {}, dom.icon("close", `${t}-remove`, () => { list.splice(k, 1); changed(); }, "Remove this marker", "small"))))),
         (k, c, block) => pasteMarkers(list, k, c, block)) : null,
       pasteNotes.has(list) ? dom.el("p", { class: "notice", "data-t": `${t}-paste-note` }, pasteNotes.get(list)) : null,
       list.length ? dom.el("p", { class: "hint" },
@@ -254,7 +254,7 @@
     };
     const built = figurepanel.build();
     return [
-      dom.group(`Figure area of “${blot.name}”`,
+      dom.group("Figure area",
         dom.row(null, dom.toggle("Whole image", "Selected area only", fig.crop_on, "figure-crop", (v) => app.setFigureCrop(blot, v),
           "Show the whole blot in the figure, or only the area in the box on the blot.")),
         fig.crop_on ? dom.el("p", { class: "hint" }, "Move the box on the blot or drag its corners.") : null,
@@ -264,12 +264,13 @@
       dom.group("Lane labels",
         labelGrid(blot),
         dom.row(null,
-          dom.button("+ Row", "label-add", addRow, "A row of labels: one text above each lane.")),
+          dom.button([WB.icon("plus"), "Row"], "label-add", addRow, "A row of labels: one text above each lane.")),
         dom.el("p", { class: "hint" },
           "Give a row a title to show it at the left. Tick “Collapse identical” to merge neighbouring lanes with the same text into one label. Cells copied from a spreadsheet can be pasted in; a list copied as a column goes along the lanes.")),
       markerGroup(blot, "MW markers", "mw_markers", "mw_side", "mw", "e.g. 55"),
       markerGroup(blot, "Band markers", "band_markers", "band_side", "band", "e.g. GAPDH"),
-      dom.group("Panels, top to bottom",
+      dom.group("Panels",
+        dom.el("p", { class: "hint" }, "The blots of the figure, top to bottom."),
         dom.el("table", { class: "grid", "data-t": "panel-list" },
           dom.el("tr", {}, dom.el("th", {}, "Show"), dom.el("th", {}, "Blot"), dom.el("th", {}, "Lane labels"),
             dom.el("th", {}, "Cropped ", dom.toggle(null, null, state.blots.every((b) => b.session.figure.crop_on), "panel-crop-all",
@@ -285,10 +286,11 @@
             dom.el("td", {}, dom.toggle(null, null, b.session.figure.crop_on, "panel-crop", (v) => app.setFigureCrop(b, v),
               "Only the selected area of this blot, or the whole image.")),
             dom.el("td", {},
-              dom.button("↑", "panel-up", () => app.moveBlot(b.id, -1)),
-              dom.button("↓", "panel-down", () => app.moveBlot(b.id, 1)))))),
+              dom.icon("up", "panel-up", () => app.moveBlot(b.id, -1), "Move up", "small"),
+              dom.icon("down", "panel-down", () => app.moveBlot(b.id, 1), "Move down", "small"))))),
         dom.row("Gap", dom.number(style.gap_mm, { t: "gap", min: 0, max: 50, step: 0.5 }, (v) => { style.gap_mm = v; restyle(); }), "mm")),
-      dom.group("Style (all panels)",
+      dom.group("Style",
+        dom.el("p", { class: "hint" }, "For all panels of the figure."),
         dom.row("Labels", dom.select([["plain", "Plain"], ["table", "Table"]], style.label_style, "label-style",
           (v) => { style.label_style = v; restyle(); })),
         dom.row("Rotate top text row", dom.select([["0", "0°"], ["45", "45°"], ["90", "90°"]], String(style.label_rotation), "label-rotation",
@@ -309,7 +311,7 @@
         built && style.lossless ? dom.el("p", { class: "hint" }, `Lossless is ${Math.round(built.nativeDpi)} dpi at this gel width.`) : null),
       dom.group("Export",
         dom.row(null,
-          dom.button("SVG", "export-svg", figurepanel.exportSvg, "Vector file with the gel's own pixels embedded and editable text."),
+          dom.primary([WB.icon("download"), "SVG"], "export-svg", figurepanel.exportSvg, "Vector file with the gel's own pixels embedded and editable text."),
           dom.button("PNG", "export-png", figurepanel.exportPng),
           dom.button("Print / PDF", "export-print", figurepanel.print, "Opens the print dialog; choose “Save as PDF”."))),
     ];

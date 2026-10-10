@@ -106,6 +106,17 @@
     app.changed("blots");
   };
 
+  // Bring back a blot that was removed, at the place it had. `labels` is which
+  // blots had the lane labels before it left: [[blot, true | false]].
+  app.restoreBlot = function (blot, index, labels = []) {
+    if (state.blots.includes(blot)) return;
+    state.blots.splice(Math.min(index, state.blots.length), 0, blot);
+    for (const [other, had] of labels) other.labels = had;
+    state.selected = blot.id;
+    state.lane = 0;
+    app.changed("blots", "panel");
+  };
+
   // -------------------------------------------------------------- brightfield
 
   // Give `target` a brightfield image from a file, or take it away (null).

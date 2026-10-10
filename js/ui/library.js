@@ -115,7 +115,7 @@
     if (usable) setStatus("idle", "");
   }
 
-  const report = (error) => alert(error.message);
+  const report = (error) => WB.feedback.error(error.message);
 
   // ---------------------------------------------------------------- switching
 
@@ -148,7 +148,8 @@
     } catch (error) {
       throw new Error("This is not a web_blot project file.");
     }
-    if (!usable && state.blots.length && !confirm("Opening a project closes the blots that are open. Continue?")) return;
+    if (!usable && state.blots.length &&
+      !(await WB.feedback.confirm("This browser stores nothing, so opening a project closes the blots that are open.", "Open project", { danger: true }))) return;
     await library.saveNow();
     project.load(data);
     detach();
@@ -305,28 +306,30 @@
           { title: "Rename" })),
         dom.el("td", { class: "wrap" }, meta.blots.join(", ")),
         dom.el("td", {}, new Date(meta.modified).toLocaleString()),
-        dom.el("td", {},
-          current ? dom.el("span", { class: "hint", "data-t": "library-current" }, "open")
-            : dom.button("Open", "library-open", act(() => library.open(meta.id), () => dialog.close())),
+        dom.el("td", { class: "actions" },
+          current ? dom.el("span", { class: "badge", "data-t": "library-current" }, "open")
+            : dom.primary("Open", "library-open", act(() => library.open(meta.id), () => dialog.close())),
           dom.button("Duplicate", "library-duplicate", act(() => library.duplicate(meta))),
-          dom.button("Export", "library-export", act(async () => {
+          dom.icon("download", "library-export", act(async () => {
             dom.download(project.fileName(meta.name), await fileText(meta.id), "application/json");
           }), "Download this project as a project file."),
-          dom.button("Delete", "library-delete", act(async () => {
-            if (confirm(`Delete '${meta.name}' from this browser? This cannot be undone.`)) await library.remove(meta);
-          }))));
+          dom.el("button", { type: "button", class: "quiet danger", "data-t": "library-delete", onclick: act(async () => {
+            if (await WB.feedback.confirm(`Delete “${meta.name}” from this browser? This cannot be undone.`, "Delete project", { danger: true })) await library.remove(meta);
+          }) }, "Delete")));
     };
-    dialog.replaceChildren(...[
-      dom.el("div", { class: "library-head" },
+    dialog.replaceChildren(
+      dom.el("div", { class: "dialog-head" },
         dom.el("h2", {}, "Projects in this browser"),
-        dom.button("Close", "library-close", () => dialog.close())),
-      dom.el("div", { class: "row" },
-        dom.button("New project", "library-new", act(() => library.newProject(), () => dialog.close()),
+        dom.icon("close", "library-close", () => dialog.close(), "Close", "quiet")),
+      dom.el("div", { class: "dialog-body" }, [
+      dom.el("div", { class: "library-actions" },
+        dom.primary([WB.icon("plus"), "New project"], "library-new", act(() => library.newProject(), () => dialog.close()),
           "Start an empty project; the open one stays in the list."),
         fileButton("Open project file…", "library-open-file", ".json",
           (file) => act(() => library.openFile(file), () => dialog.close())(),
           "Add a project file as a new project and open it."),
-        dom.button("Export library", "library-export-all", act(async () => {
+        dom.el("span", { class: "spacer" }),
+        dom.button([WB.icon("download"), "Export library"], "library-export-all", act(async () => {
           const n = await library.exportAll();
           return `Exported ${n} project${n === 1 ? "" : "s"}.`;
         }), "Download all projects in one zip file, for a backup or to move them to another browser."),
@@ -342,7 +345,7 @@
       dom.el("p", { class: "hint", "data-t": "library-usage" },
         usage && usage.quota ? `${megabytes(usage.usage || 0)} of ${megabytes(usage.quota)} used. ` : "",
         "Projects are saved here as you work, in this browser on this computer only. The browser can clear this storage, for example when its site data is deleted, so export the library for anything you need to keep."),
-    ].filter(Boolean));
+      ].filter(Boolean)));
   }
 
   // The list of projects, with `message` above it.

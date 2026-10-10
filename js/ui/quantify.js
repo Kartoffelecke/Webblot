@@ -206,7 +206,7 @@
     root.replaceChildren(
       noPeaks ? dom.el("p", { class: "notice", "data-t": "no-peaks" },
         "No peaks are marked yet. Press ",
-        dom.button("Detect (all)", "detect-all-here", () => quantify.detect(blot, true)),
+        dom.primary("Detect peaks", "detect-all-here", () => quantify.detect(blot, true)),
         " to find them in every lane, or double-click a band in a plot.") : "", // not null: the DOM would print it
       dom.el("p", { class: "hint" },
         "Drag a peak's borders to move them. Double-click adds a peak, right-click on a peak removes it. Shift + double-click adds a background anchor or removes the one under the cursor; drag anchors and line ends to shape the background."),
@@ -270,7 +270,7 @@
         dom.el("td", {}, dom.number(Math.round(peak.end), { t: "peak-end", min: 0, step: 1, width: 54 },
           (v) => { peak.end = v; changed(); })),
         dom.el("td", { "data-t": "peak-area" }, num.formatG(quant.peakArea(profile, baseline, peak), 5)),
-        dom.el("td", {}, dom.button("×", "peak-delete", () => app.removePeak(lane, peak), "Remove this peak"))));
+        dom.el("td", {}, dom.icon("close", "peak-delete", () => app.removePeak(lane, peak), "Remove this peak", "small"))));
 
     return [
       dom.group("Lane",
@@ -318,14 +318,15 @@
         dom.row("Sensitivity", dom.number(options.prominencePct, { t: "sensitivity", min: 0.5, max: 90, step: 0.5 },
           (v) => (options.prominencePct = v)), "%"),
         dom.row(null,
-          dom.button("Detect (lane)", "detect-lane", () => quantify.detect(blot, false)),
-          dom.button("Detect (all)", "detect-all", () => quantify.detect(blot, true)),
+          dom.button("This lane", "detect-lane", () => quantify.detect(blot, false), "Detect the peaks of the current lane only."),
+          dom.primary("Detect in all lanes", "detect-all", () => quantify.detect(blot, true)),
           dom.button("Renumber", "renumber", () => { list.forEach(quant.numberPeaks); changed(); },
             "Number the peaks of every lane 1, 2, 3, … from the top (overwrites edited numbers).")),
         dom.el("table", { class: "grid", "data-t": "peaks" },
           dom.el("tr", {}, ["Use", "Peak #", "Start", "End", "Area", ""].map((h) => dom.el("th", {}, h))),
           peakRows)),
-      dom.group("Band areas (rows: lanes, columns: peaks)",
+      dom.group("Band areas",
+        dom.el("p", { class: "hint" }, "One row per lane, one column per peak number."),
         dom.row(null, dom.check("Normalize across lanes", state.normalize, "normalize", (v) => {
           state.normalize = v;
           changed();

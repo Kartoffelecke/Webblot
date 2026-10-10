@@ -41,9 +41,10 @@
         const source = app.blot(Number(id));
         if (!source) return;
         const hasPeaks = blot.session.lanes.some((l) => l.peaks.length);
-        if (!hasPeaks || confirm("The lanes of this blot are replaced, so its peaks are removed. Continue?"))
-          app.copySetup(source, blot);
-        else app.changed("panel");
+        const go = hasPeaks
+          ? WB.feedback.confirm("The lanes of this blot are replaced, so the peaks marked in them are removed.", "Replace lanes", { danger: true })
+          : Promise.resolve(true);
+        go.then((yes) => (yes ? app.copySetup(source, blot) : app.changed("panel")));
       });
     return [
       dom.group("Rotate",
@@ -52,8 +53,8 @@
             app.setRotation(blot, v);
             app.changed("panel");
           }), "°",
-          dom.button("⟲ 90°", "rot-ccw", () => turn(blot, 90)),
-          dom.button("⟳ 90°", "rot-cw", () => turn(blot, -90))),
+          dom.icon("turn-left", "rot-ccw", () => turn(blot, 90), "Turn 90° to the left"),
+          dom.icon("turn-right", "rot-cw", () => turn(blot, -90), "Turn 90° to the right")),
         dom.row(null,
           toolButton("Draw line", "level", "tool-level",
             "Draw a line along a row of bands, or along the edge of a lane."),
@@ -90,8 +91,8 @@
             dom.check("Invert", t.bf_invert, "bf-invert", (v) => { t.bf_invert = v; display(); },
               "Tick if the marker bands are bright in the brightfield image."),
             dom.button("Remove", "bf-remove", () => {
-              if (confirm("Remove the brightfield image? Use “Split off” to keep it as a blot."))
-                app.setBrightfield(blot, null);
+              WB.feedback.confirm("Remove the brightfield image? “Split off” keeps it as a blot of its own instead.", "Remove image", { danger: true })
+                .then((yes) => yes && app.setBrightfield(blot, null));
             }, "Delete the brightfield image.")),
           dom.el("p", { class: "hint" }, "Its min, max and gamma are below the blot's, under the image."),
         ] : dom.el("p", { class: "hint" },
@@ -115,7 +116,7 @@
 
   panels.detect = function (blot) {
     if (detectOptions.method === "even" && !detectOptions.nLanes) {
-      alert("Set the number of lanes for evenly spaced lanes.");
+      WB.feedback.error("Set the number of lanes for evenly spaced lanes.");
       return;
     }
     const roi = blot.roi ? blot.roi.map((v) => v + 0.5) : null;
@@ -126,7 +127,7 @@
       method: detectOptions.method,
     });
     if (!found.length) {
-      alert("No lanes found. Set the number of lanes and try again.");
+      WB.feedback.error("No lanes found. Set the number of lanes and try again.");
       return;
     }
     blot.session.lanes = found;
@@ -150,7 +151,7 @@
         dom.row(null,
           toolButton("Draw gel area", "roi", "tool-roi", "Optional: restrict detection to a rectangle. Lanes span its height."),
           blot.roi ? dom.button("Clear area", "roi-clear", () => { blot.roi = null; app.changed("lanes", "panel"); }) : null),
-        dom.row(null, dom.button("Detect lanes", "detect-lanes", () => panels.detect(blot)))),
+        dom.row(null, dom.primary("Detect lanes", "detect-lanes", () => panels.detect(blot)))),
       dom.group("Edit",
         dom.row("Width (all)", dom.number(list.length ? Math.round(num.median(list.map((l) => l.width))) : "",
           { t: "lane-width", min: 2, step: 1 }, (v) => { list.forEach((l) => (l.width = v)); edited(); }), "px"),
@@ -161,16 +162,29 @@
           dom.el("span", { class: "hint" }, "fans all lanes")),
         dom.row(null,
           dom.button("Add lane", "lane-add", () => addLane(blot)),
-          dom.button("Delete lane", "lane-delete", () => {
-            if (!lane) return;
-            list.splice(state.lane, 1);
-            state.lane = Math.min(state.lane, Math.max(list.length - 1, 0));
-            app.changed("lanes", "panel");
-          }),
-          dom.button("Clear", "lane-clear", () => { blot.session.lanes = []; app.changed("lanes", "panel"); }))),
+          dom.button("Delete lane", "lane-delete", () => panels.deleteLane(blot)),
+          dom.button("Clear", "lane-clear", () => panels.deleteLane(blot, true)))),
       dom.el("p", { class: "hint" },
         "Click a lane on the blot to select it. Drag it to move; drag the handles to change its length, width and tilt. Lanes are numbered left to right."),
     ];
+  };
+
+  // Remove the current lane, or all of them. No question is asked: the message
+  // that says what was removed can bring it back, peaks included.
+  panels.deleteLane = function (blot, all = false) {
+    const before = blot.session.lanes;
+    const index = state.lane;
+    if (!before.length || (!all && !before[index])) return;
+    blot.session.lanes = all ? [] : before.filter((_, i) => i !== index);
+    state.lane = Math.min(index, Math.max(blot.session.lanes.length - 1, 0));
+    app.changed("lanes", "quant", "panel");
+    WB.feedback.toast(all ? `Removed all ${before.length} lanes.` : `Removed lane ${index + 1}.`, {
+      action: { label: "Undo", run: () => {
+        blot.session.lanes = before;
+        if (blot.id === state.selected) state.lane = Math.min(index, before.length - 1);
+        app.changed("lanes", "quant", "panel");
+      } },
+    });
   };
 
   function addLane(blot) {

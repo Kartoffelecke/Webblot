@@ -1,0 +1,108 @@
+/* Design tokens: every colour, size and shadow the page uses. Light is the
+   default; dark follows the system unless the theme is set by hand
+   (data-theme on <html>). */
+:root {
+  color-scheme: light;
+  --bg: #f3f4f7;
+  --surface: #ffffff;
+  --surface-2: #f7f8fa;
+  --surface-3: #eef0f4;
+  --border: #e0e3ea;
+  --border-strong: #c6ccd8;
+  --text: #161a22;
+  --text-2: #4b5364;
+  --text-3: #6f7789;
+  --accent: #2b67d1;
+  --accent-hover: #2257b6;
+  --accent-soft: #e7effd;
+  --accent-text: #ffffff;
+  --danger: #c2352c;
+  --danger-soft: #fdebe9;
+  --ok: #1a7f45;
+  --ok-soft: #e3f4ea;
+  --warn-soft: #fff4d1;
+  --warn-border: #e2bd4d;
+  --stage: #0d0e11;
+  --plot-fill: rgba(43, 103, 209, 0.3);
+  --plot-fill-unused: rgba(111, 119, 137, 0.2);
+  --plot-baseline: #d8632a;
+  --shadow-1: 0 1px 2px rgba(22, 26, 34, 0.06), 0 1px 1px rgba(22, 26, 34, 0.04);
+  --shadow-2: 0 6px 20px rgba(22, 26, 34, 0.12), 0 2px 6px rgba(22, 26, 34, 0.08);
+  --shadow-3: 0 18px 48px rgba(22, 26, 34, 0.22);
+
+  --radius: 8px;
+  --radius-s: 5px;
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 24px;
+  --control-h: 28px;
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --text-s: 12px;
+  --text-m: 13px;
+  --text-l: 15px;
+  --text-xl: 20px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #121418;
+    --surface: #1b1e24;
+    --surface-2: #21252c;
+    --surface-3: #2a2f38;
+    --border: #2e333c;
+    --border-strong: #434a57;
+    --text: #eceef3;
+    --text-2: #b4bac7;
+    --text-3: #8b92a2;
+    --accent: #6b9ff5;
+    --accent-hover: #86b1f8;
+    --accent-soft: #1e2c47;
+    --accent-text: #0d1422;
+    --danger: #f0766d;
+    --danger-soft: #3c1f1d;
+    --ok: #55c487;
+    --ok-soft: #173224;
+    --warn-soft: #3a3115;
+    --warn-border: #7d6722;
+    --stage: #08090b;
+    --plot-fill: rgba(107, 159, 245, 0.34);
+    --plot-fill-unused: rgba(139, 146, 162, 0.22);
+    --plot-baseline: #f08a52;
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-2: 0 8px 24px rgba(0, 0, 0, 0.5);
+    --shadow-3: 0 20px 56px rgba(0, 0, 0, 0.65);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #121418;
+  --surface: #1b1e24;
+  --surface-2: #21252c;
+  --surface-3: #2a2f38;
+  --border: #2e333c;
+  --border-strong: #434a57;
+  --text: #eceef3;
+  --text-2: #b4bac7;
+  --text-3: #8b92a2;
+  --accent: #6b9ff5;
+  --accent-hover: #86b1f8;
+  --accent-soft: #1e2c47;
+  --accent-text: #0d1422;
+  --danger: #f0766d;
+  --danger-soft: #3c1f1d;
+  --ok: #55c487;
+  --ok-soft: #173224;
+  --warn-soft: #3a3115;
+  --warn-border: #7d6722;
+  --stage: #08090b;
+  --plot-fill: rgba(107, 159, 245, 0.34);
+  --plot-fill-unused: rgba(139, 146, 162, 0.22);
+  --plot-baseline: #f08a52;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --shadow-3: 0 20px 56px rgba(0, 0, 0, 0.65);
+}

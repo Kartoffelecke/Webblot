@@ -15,6 +15,11 @@ INDEX_URL = (ROOT / "index.html").as_uri()
 # Passing arrays to the page: images travel as flat lists.
 TO_IMAGE = "([w, h, data]) => ({ w, h, data: Float32Array.from(data) })"
 
+# Every section of the side panel open, so that a test reaches a control
+# without unfolding its section first. (Which sections are folded is a setting
+# the browser keeps; "*" is for all that were never touched.)
+ALL_SECTIONS_OPEN = """try { if (!localStorage.getItem("web_blot.sections")) localStorage.setItem("web_blot.sections", '{"*": true}'); } catch (e) {}"""
+
 
 @pytest.fixture
 def app(page):
@@ -22,6 +27,7 @@ def app(page):
     errors = []
     page.on("pageerror", lambda exc: errors.append(str(exc)))
     page.on("console", lambda msg: errors.append(msg.text) if msg.type == "error" else None)
+    page.add_init_script(ALL_SECTIONS_OPEN)
     page.goto(INDEX_URL)
     page.wait_for_function("window.WB && WB.quant")
     yield page
@@ -216,6 +222,13 @@ class Ui:
     def rect(self, locator):
         """Bounding rectangle of an element as the browser lays it out."""
         return locator.evaluate("(el) => { const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; }")
+
+    def confirm(self, yes=True):
+        """Answer the question the page is asking; returns what it asked."""
+        text = self.t("confirm-text").inner_text()
+        self.click("confirm-ok" if yes else "confirm-cancel")
+        self.flush()
+        return text
 
     def download(self, name):
         with self.page.expect_download() as info:

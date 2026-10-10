@@ -1,15 +1,24 @@
-// Page layout and start-up.
+// The page: header, the four steps, the regions, and start-up.
 (function () {
   "use strict";
   const WB = (window.WB = window.WB || {});
-  const { dom, app, state, num, imageio, panels, quantify, figurepanel, project, library } = WB;
+  const { dom, app, state, num, imageio, panels, quantify, figurepanel, project, library, feedback } = WB;
 
-  const TABS = [
-    ["prepare", "Prepare"],
-    ["lanes", "Lanes"],
-    ["quantify", "Quantify"],
-    ["figure", "Figure"],
+  // The steps a blot goes through, in order: key, name, and what the step is for.
+  const STEPS = [
+    ["prepare", "Prepare", "Turn, straighten and crop the blot so that its lanes run straight down."],
+    ["lanes", "Lanes", "Mark the lanes: detect them, then adjust them on the blot."],
+    ["quantify", "Quantify", "Find the bands of each lane and measure them."],
+    ["figure", "Figure", "Label lanes and bands, and export the figure."],
   ];
+
+  app.setStep = function (key) {
+    state.tab = key;
+    state.tool = null;
+    app.changed("panel", "tool");
+  };
+
+  // ------------------------------------------------------------------- files
 
   async function addFiles(files) {
     const problems = [];
@@ -22,7 +31,7 @@
         problems.push(`${file.name}: ${error.message}`);
       }
     }
-    if (problems.length) alert(`Could not open:\n${problems.join("\n")}`);
+    if (problems.length) feedback.error(`Could not open:\n${problems.join("\n")}`);
   }
   app.addFiles = addFiles;
 
@@ -32,13 +41,15 @@
     app.changed("blots");
   };
 
+  // ------------------------------------------------------------------ header
+
   function topBar() {
     const files = dom.el("input", {
-      type: "file", multiple: true, accept: "image/*,.tif,.tiff", "data-t": "add-files", style: "display:none",
+      type: "file", multiple: true, accept: "image/*,.tif,.tiff", "data-t": "add-files", hidden: true,
       onchange: async () => { await addFiles([...files.files]); files.value = ""; },
     });
     const projectFile = dom.el("input", {
-      type: "file", accept: ".json", "data-t": "open-project", style: "display:none",
+      type: "file", accept: ".json", "data-t": "open-project", hidden: true,
       onchange: async () => {
         const file = projectFile.files[0];
         projectFile.value = "";
@@ -46,27 +57,110 @@
         try {
           await library.openFile(file);
         } catch (error) {
-          alert(`Could not open the project: ${error.message}`);
+          feedback.error(`Could not open the project: ${error.message}`);
         }
       },
     });
-    return dom.el("header", {},
-      dom.el("strong", {}, "web_blot"),
-      library.headerParts(),
-      dom.button("Add blots…", "add-blots", () => files.click(), "Open one or more blot images; each becomes a blot."),
-      dom.button("Sample blot", "add-sample", app.addSample),
-      dom.button("Open project…", "open-project-button", () => projectFile.click(),
-        "Open a project file as a new project. The project that is open stays in the browser."),
-      dom.button("Save project", "save-project", project.save, "Download this project as one file with all blots, settings and image data."),
-      dom.el("label", {}, "Blot size", dom.el("input", {
-        type: "range", min: 200, max: 1100, step: 10, value: state.cardWidth, "data-t": "card-size",
-        oninput: (ev) => { state.cardWidth = Number(ev.target.value); app.changed("tool"); },
-      })),
-      dom.check("Hide blots", state.hideBlots, "hide-blots", (v) => { state.hideBlots = v; app.changed("tool"); },
-        "Give the whole area to the lane plots or the figure."),
+    const [nameField, listButton] = library.headerParts();
+    const theme = dom.icon(WBTheme.current() === "dark" ? "sun" : "moon", "theme", () => {
+      theme.replaceChildren(WB.icon(WBTheme.toggle() === "dark" ? "sun" : "moon"));
+    }, "Light or dark", "quiet");
+    return dom.el("header", { class: "topbar" },
+      dom.el("span", { class: "brand" }, dom.el("span", { class: "brand-mark" }, dom.el("i", {})), "web_blot"),
+      nameField,
       library.statusPart(),
+      dom.el("span", { class: "spacer" }),
+      listButton,
+      dom.button([WB.icon("upload"), "Open file…"], "open-project-button", () => projectFile.click(),
+        "Open a project file as a new project. The project that is open stays in the browser."),
+      dom.button([WB.icon("download"), "Save as file"], "save-project", project.save,
+        "Download this project as one file with all blots, settings and image data."),
+      dom.el("span", { class: "divider" }),
+      theme,
+      dom.icon("help", "help", showHelp, "What the mouse and the keys do", "quiet"),
       files, projectFile);
   }
+
+  // The steps as the page's navigation, and beside them what concerns all blots.
+  function stepsBar() {
+    const steps = STEPS.map(([key, label], i) => [
+      i ? WB.icon("chevron-right") : null,
+      dom.el("button", { type: "button", class: "step", "data-t": `tab-${key}`, "data-step": key, onclick: () => app.setStep(key) },
+        dom.el("span", { class: "n" }, i + 1), label),
+    ]);
+    return dom.el("nav", { class: "steps", "aria-label": "Steps" },
+      dom.el("div", { class: "stepper" }, steps),
+      dom.el("span", { class: "spacer" }),
+      dom.el("div", { class: "view-controls" },
+        dom.el("label", { title: "Size of the blots on the page" }, "Size", dom.el("input", {
+          type: "range", min: 200, max: 1100, step: 10, value: state.cardWidth, "data-t": "card-size",
+          oninput: (ev) => { state.cardWidth = Number(ev.target.value); app.changed("tool"); },
+        })),
+        dom.check("Hide blots", state.hideBlots, "hide-blots", (v) => { state.hideBlots = v; app.changed("tool"); },
+          "Give the whole area to the lane plots or the figure."),
+        dom.el("span", { class: "divider" }),
+        dom.button("Sample", "add-sample", app.addSample, "Add a made-up blot with eight lanes."),
+        dom.primary([WB.icon("plus"), "Add blots"], "add-blots", () => document.querySelector("[data-t=add-files]").click(),
+          "Open one or more blot images; each becomes a blot. Images can also be dropped on the page.")));
+  }
+
+  // which step is open, and what the selected blot already has
+  function renderSteps() {
+    const blot = app.blot();
+    const done = {
+      prepare: !!blot,
+      lanes: !!blot && blot.session.lanes.length > 0,
+      quantify: !!blot && blot.session.lanes.some((lane) => lane.peaks.length),
+      figure: false,
+    };
+    document.querySelectorAll("button.step").forEach((button, i) => {
+      const key = button.dataset.step;
+      const current = state.tab === key;
+      button.classList.toggle("active", current);
+      button.classList.toggle("done", done[key] && !current);
+      button.setAttribute("aria-current", current ? "step" : "false");
+      button.querySelector(".n").replaceChildren(done[key] && !current ? WB.icon("check") : String(i + 1));
+    });
+    document.getElementById("body").classList.toggle("no-blots", !state.blots.length);
+  }
+
+  function showHelp() {
+    const row = (what, how) => [dom.el("dt", {}, what), dom.el("dd", {}, how)];
+    const key = (...names) => names.map((n, i) => [i ? " + " : "", dom.el("kbd", {}, n)]);
+    const dialog = dom.el("dialog", { class: "help", "data-t": "help-dialog" },
+      dom.el("div", { class: "dialog-head" }, dom.el("h2", {}, "Mouse and keys"),
+        dom.icon("close", "help-close", () => dialog.close(), "Close", "quiet")),
+      dom.el("div", { class: "dialog-body" },
+        dom.el("h3", {}, "Everywhere"),
+        dom.el("dl", {},
+          row("Go to a step", [key("1"), " to ", key("4")]),
+          row("Stop drawing, or discard what was drawn", key("Esc")),
+          row("Add blots", "Drop image files on the page"),
+          row("Order of the blots", "Drag a blot by its handle beside another one"),
+          row("Brightfield image", "Drag a blot by its handle onto another blot's image")),
+        dom.el("h3", {}, "On a blot"),
+        dom.el("dl", {},
+          row("Zoom", [key("Ctrl"), " or ", key("⌘"), " + wheel, or pinch"]),
+          row("Move a zoomed blot", "Wheel, or drag the image"),
+          row("Move a lane", "Drag it; its handles change length, width and tilt"),
+          row("Remove the current lane", [key("Delete"), " on the Lanes step"]),
+          row("Move a marker", "Drag it up or down, anywhere along its line")),
+        dom.el("h3", {}, "In a lane plot"),
+        dom.el("dl", {},
+          row("Move a peak's border", "Drag it"),
+          row("Add a peak", "Double-click the band"),
+          row("Remove a peak", "Right-click it"),
+          row("Background anchor", [key("Shift"), " + double-click adds one, or removes the one under the pointer"])),
+        dom.el("h3", {}, "In a table of labels"),
+        dom.el("dl", {},
+          row("Next row", [key("Enter"), " or ", key("↓")]),
+          row("Fill from a spreadsheet", "Copy the cells there and paste them into the first cell here"))));
+    dialog.addEventListener("close", () => dialog.remove());
+    document.body.append(dialog);
+    dialog.showModal();
+  }
+
+  // -------------------------------------------------------------- side panel
 
   function renderSide(kinds) {
     const side = document.getElementById("side");
@@ -80,20 +174,25 @@
       focus = [active.dataset.t, same.indexOf(active)];
     }
     const blot = app.blot();
-    const body = !blot
-      ? [dom.el("p", { class: "hint" }, "Add a blot to begin.")]
-      : state.tab === "prepare" ? panels.prepare(blot)
+    if (!blot) {
+      side.replaceChildren();
+      return;
+    }
+    const index = STEPS.findIndex(([key]) => key === state.tab);
+    const [, label, lead] = STEPS[index];
+    const next = STEPS[index + 1];
+    const body = state.tab === "prepare" ? panels.prepare(blot)
       : state.tab === "lanes" ? panels.lanes(blot)
       : state.tab === "quantify" ? quantify.panel(blot)
       : figurepanel.panel(blot);
     side.replaceChildren(
-      dom.el("nav", {}, TABS.map(([key, label]) =>
-        dom.el("button", {
-          type: "button", "data-t": `tab-${key}`, class: state.tab === key ? "active" : "",
-          onclick: () => { state.tab = key; state.tool = null; app.changed("panel", "tool"); },
-        }, label))),
-      blot ? dom.el("p", { class: "selected-name", "data-t": "selected-name" }, blot.name) : null,
-      ...body.flat().filter(Boolean));
+      dom.el("div", { class: "side-head" },
+        dom.el("div", { class: "step-title" }, `Step ${index + 1} · ${label}`),
+        dom.el("div", { class: "selected-name", "data-t": "selected-name", title: blot.name }, blot.name),
+        dom.el("div", { class: "lead" }, lead)),
+      ...body.flat().filter(Boolean),
+      next ? dom.el("div", { class: "side-foot" },
+        dom.button([`Next: ${next[1]}`, WB.icon("arrow-right")], "next-step", () => app.setStep(next[0]))) : "");
     if (focus) {
       const target = side.querySelectorAll(`[data-t="${focus[0]}"]`)[focus[1]];
       if (target) target.focus();
@@ -180,9 +279,9 @@
     lowerShows = shows;
     panel.className = state.tab;
     // with plots or a figure below, the blots keep to the upper part of the
-    // window, so that what the tab shows is in view without scrolling
+    // window, so that what the step shows is in view without scrolling
     const main = panel.parentNode;
-    main.classList.toggle("split", state.tab === "quantify" || state.tab === "figure");
+    main.classList.toggle("split", !!state.blots.length && (state.tab === "quantify" || state.tab === "figure"));
     applyLayout();
     if (state.tab === "quantify") quantify.renderPlots(lower);
     else if (state.tab === "figure") figurepanel.renderPreview(lower);
@@ -202,6 +301,8 @@
     "WB.quant": "js/core/quantification.js",
     "WB.sample": "js/core/sample.js",
     "WB.figure": "js/core/figure.js",
+    "WB.icon": "js/ui/icons.js",
+    "WB.feedback": "js/ui/feedback.js",
     "WB.workspace": "js/ui/workspace.js",
     "WB.panels": "js/ui/panels.js",
     "WB.quantify": "js/ui/quantify.js",
@@ -217,19 +318,31 @@
     return Object.entries(PARTS).filter(([path]) => !present(path)).map(([, file]) => file);
   }
 
+  const typing = () => /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
+
   function start() {
     const missing = missingParts();
     if (missing.length) {
-      document.getElementById("app").replaceChildren(
-        dom.el("div", { class: "fatal", "data-t": "load-error" },
-          dom.el("h1", {}, "web_blot could not start"),
-          dom.el("p", {}, "These files were not loaded:"),
-          dom.el("ul", {}, missing.map((file) => dom.el("li", {}, file))),
-          dom.el("p", {}, "If the files exist, a content or ad blocker is probably refusing them. Switch it off for this page and reload.")));
+      const el = (tag, text, kids = []) => {
+        const node = document.createElement(tag);
+        node.textContent = text;
+        node.append(...kids);
+        return node;
+      };
+      const box = el("div", "", [
+        el("h1", "web_blot could not start"),
+        el("p", "These files were not loaded:"),
+        el("ul", "", missing.map((file) => el("li", file))),
+        el("p", "If the files exist, a content or ad blocker is probably refusing them. Switch it off for this page and reload."),
+      ]);
+      box.className = "fatal";
+      box.dataset.t = "load-error";
+      document.getElementById("app").replaceChildren(box);
       return;
     }
     document.getElementById("app").replaceChildren(
       topBar(),
+      stepsBar(),
       dom.el("div", { id: "body" },
         dom.el("main", {},
           dom.el("div", { id: "workspace" }),
@@ -240,18 +353,33 @@
             dom.el("div", { id: "lower-body" }))),
         dragBar("side-bar", "side", (e) => window.innerWidth - e.clientX - 3,
           "Drag to change the width of the side panel; double-click for the default."),
-        dom.el("aside", { id: "side" })));
-    app.views.push(renderSide, renderLower);
+        dom.el("aside", { id: "side", "aria-label": "Settings of the step" })));
+    app.views.push(renderSteps, renderSide, renderLower);
     applyLayout();
     window.addEventListener("resize", () => {
       applyLayout();
       app.changed("tool");
     });
     // dropping image files anywhere adds them as blots
-    document.addEventListener("dragover", (ev) => ev.preventDefault());
+    const carriesFiles = (ev) => ev.dataTransfer && [...ev.dataTransfer.types].includes("Files");
+    document.addEventListener("dragover", (ev) => {
+      ev.preventDefault();
+      document.body.classList.toggle("dropping", carriesFiles(ev));
+    });
+    document.addEventListener("dragleave", (ev) => {
+      if (!ev.relatedTarget) document.body.classList.remove("dropping");
+    });
     document.addEventListener("drop", (ev) => {
       ev.preventDefault();
+      document.body.classList.remove("dropping");
       if (ev.dataTransfer.files.length) addFiles([...ev.dataTransfer.files]);
+    });
+    // 1 to 4 go to the steps, ? shows what else there is
+    document.addEventListener("keydown", (ev) => {
+      if (typing() || ev.ctrlKey || ev.metaKey || ev.altKey || document.querySelector("dialog[open]")) return;
+      const step = STEPS[Number(ev.key) - 1];
+      if (step) app.setStep(step[0]);
+      else if (ev.key === "?") showHelp();
     });
     app.changed("blots", "panel");
     app.flush();

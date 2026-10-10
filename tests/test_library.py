@@ -6,7 +6,7 @@ import time
 import zipfile
 
 import pytest
-from conftest import INDEX_URL, Ui
+from conftest import ALL_SECTIONS_OPEN, INDEX_URL, Ui
 
 IMAGE_COUNT = """() => new Promise((resolve) => {
     const request = indexedDB.open("web_blot");
@@ -24,6 +24,7 @@ def save(ui):
 
 def started(page):
     """A page of the application, once it has opened what the browser stores."""
+    page.add_init_script(ALL_SECTIONS_OPEN)
     page.goto(INDEX_URL)
     page.wait_for_function("window.WB && WB.library && WB.library.ready")
     page.evaluate("WB.library.ready")
@@ -168,8 +169,13 @@ def test_several_projects(ui, blot_files):
     rows.filter(has=ui.page.locator("[data-t=library-open]")).locator("[data-t=library-duplicate]").click()
     ui.page.wait_for_function("document.querySelectorAll('[data-t=library-row]').length === 3")
     assert sorted(library_names(ui)) == ["Autophagy", "Loading", "Loading copy"]
-    ui.page.once("dialog", lambda d: d.accept())
     library_row(ui, "Loading copy").locator("[data-t=library-delete]").click()
+    assert "Loading copy" in ui.t("confirm-text").inner_text()
+    ui.click("confirm-cancel")  # nothing happens without a yes
+    assert len(stored(ui)) == 3
+    library_row(ui, "Loading copy").locator("[data-t=library-delete]").click()
+    assert ui.t("confirm-ok").inner_text() == "Delete project"
+    ui.click("confirm-ok")
     ui.page.wait_for_function("document.querySelectorAll('[data-t=library-row]').length === 2")
     assert sorted(library_names(ui)) == ["Autophagy", "Loading"]
     # the copy was a project of its own: the original still opens
@@ -178,8 +184,8 @@ def test_several_projects(ui, blot_files):
 
     # deleting the open project leaves an empty page
     open_library(ui)
-    ui.page.once("dialog", lambda d: d.accept())
     rows.filter(has=ui.page.locator("[data-t=library-current]")).locator("[data-t=library-delete]").click()
+    ui.click("confirm-ok")
     ui.page.wait_for_function("document.querySelectorAll('[data-t=library-row]').length === 1")
     assert ui.state("s.blots.length") == 0 and [p["name"] for p in stored(ui)] == ["Autophagy"]
     ui.click("library-close")
@@ -220,11 +226,13 @@ def test_project_files_open_as_new_projects_and_older_files_still_open(ui, blot_
     # a file that is not a project leaves everything alone
     bad = tmp_path / "bad.webblot.json"
     bad.write_text("{}")
-    messages = []
-    ui.page.once("dialog", lambda d: (messages.append(d.message), d.accept()))
     ui.t("open-project").set_input_files(str(bad))
-    ui.page.wait_for_timeout(200)
-    assert "not a web_blot project" in messages[0] and ui.state("s.blots[0].name") == "target" and len(stored(ui)) == 2
+    assert "not a web_blot project" in ui.t("toast-error").inner_text()
+    assert ui.state("s.blots[0].name") == "target" and len(stored(ui)) == 2
+    # an error stays until it is closed
+    ui.page.wait_for_timeout(300)
+    ui.click("toast-close")
+    assert ui.t("toast-error").count() == 0
 
 
 def test_library_file_moves_all_projects_to_another_browser(ui, blot_files, browser, tmp_path):
@@ -339,12 +347,11 @@ def test_the_page_works_where_the_browser_stores_nothing(browser, blot_files):
     assert ui.state("b.session.lanes.length") == 8 and ui.t("save-status").inner_text() == "Not stored"
     # project files are what is left; opening one asks before it replaces the blots
     saved = ui.download("save-project")
-    asked = []
-    page.once("dialog", lambda d: (asked.append(d.message), d.accept()))
     ui.state("(b.name = 'other', 0)")
     ui.t("open-project").set_input_files(saved.path())
+    assert "closes the blots" in ui.confirm()
     page.wait_for_function("WB.state.blots[0].name === 'target'")
-    assert "closes the blots" in asked[0] and not errors
+    assert not errors
     context.close()
 
 

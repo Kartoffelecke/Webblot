@@ -551,21 +551,25 @@
             ev.dataTransfer.effectAllowed = "move";
             ev.dataTransfer.setDragImage(node, 20, 20);
           },
-        }, "⠿"),
+        }, WB.icon("grip")),
         dom.text(blot.name, "blot-name", (v) => {
           blot.name = v.trim() || blot.name;
           app.changed("panel");
         }, { class: "name" }),
         dom.el("span", { class: "dim", "data-t": "dim" }),
         dom.el("span", { class: "zoom" },
-          dom.button("−", "zoom-out", () => workspace.zoom(blot, 1 / ZOOM_STEP), "Zoom out"),
+          dom.icon("minus", "zoom-out", () => workspace.zoom(blot, 1 / ZOOM_STEP), "Zoom out"),
           dom.button("100%", "zoom-reset", () => workspace.resetZoom(blot), "Show the whole blot again"),
-          dom.button("+", "zoom-in", () => workspace.zoom(blot, ZOOM_STEP),
+          dom.icon("plus", "zoom-in", () => workspace.zoom(blot, ZOOM_STEP),
             "Zoom in. Also: Ctrl or ⌘ + wheel, or pinch, zooms at the pointer; on a zoomed blot the wheel, or dragging the image, moves it.")),
-        dom.button("↑", "blot-up", () => app.moveBlot(blot.id, -1), "Move up in the figure"),
-        dom.button("↓", "blot-down", () => app.moveBlot(blot.id, 1), "Move down in the figure"),
-        dom.button("×", "blot-remove", () => {
-          if (confirm(`Remove '${blot.name}'?`)) app.removeBlot(blot.id);
+        dom.icon("up", "blot-up", () => app.moveBlot(blot.id, -1), "Move up in the figure"),
+        dom.icon("down", "blot-down", () => app.moveBlot(blot.id, 1), "Move down in the figure"),
+        dom.icon("close", "blot-remove", () => {
+          // no question: the blot can be brought back
+          const index = state.blots.indexOf(blot);
+          const labels = state.blots.map((b) => [b, b.labels]);
+          app.removeBlot(blot.id);
+          WB.feedback.toast(`Removed “${blot.name}”.`, { action: { label: "Undo", run: () => app.restoreBlot(blot, index, labels) } });
         }, "Remove this blot")),
       dom.el("div", { class: "stage" }, canvas, svg),
       exposureControls(blot));
@@ -603,6 +607,19 @@
     return node;
   }
 
+  // What an empty page shows: the three ways to begin.
+  function welcome() {
+    const press = (t) => () => document.querySelector(`[data-t=${t}]`).click();
+    return dom.el("div", { class: "welcome", "data-t": "welcome" },
+      dom.el("h1", {}, "Analyse a western blot"),
+      dom.el("p", {}, "Drop blot images anywhere on this page, or start with one of these. Images stay on this computer."),
+      dom.el("div", { class: "choices" },
+        dom.primary([WB.icon("image"), "Add blot images…"], "welcome-add", press("add-files"), "16-bit TIFF, PNG or JPEG; several at once."),
+        dom.button("Try the sample blot", "welcome-sample", () => app.addSample(), "A made-up blot with eight lanes, to see how it works."),
+        dom.button([WB.icon("folder"), "Open a project file…"], "welcome-open", press("open-project"))),
+      dom.el("p", { class: "steps-preview" }, "Then: prepare the image, mark the lanes, measure the bands, build the figure."));
+  }
+
   const cards = new Map(); // blot id -> card element
 
   function render(kinds) {
@@ -616,8 +633,7 @@
         cards.set(blot.id, node);
         return node;
       }));
-      if (!state.blots.length)
-        root.append(dom.el("p", { class: "empty" }, "No blot yet. Use “Add blots…” or “Sample blot”."));
+      if (!state.blots.length) root.append(welcome());
     }
     const redrawImages = ["blots", "image", "display", "exposure"].some((k) => kinds.has(k));
     for (const blot of state.blots) {
@@ -654,9 +670,7 @@
     if (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) return;
     const blot = app.blot();
     if (state.tab !== "lanes" || !blot || !blot.session.lanes[state.lane]) return;
-    blot.session.lanes.splice(state.lane, 1);
-    state.lane = Math.min(state.lane, Math.max(blot.session.lanes.length - 1, 0));
-    app.changed("lanes", "panel");
+    WB.panels.deleteLane(blot);
     ev.preventDefault();
   });
 })();

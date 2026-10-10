@@ -37,6 +37,14 @@
   dom.button = (label, t, onClick, title) =>
     dom.el("button", { type: "button", "data-t": t, title, onclick: onClick }, label);
 
+  // the one button of a panel that is the usual next thing to do
+  dom.primary = (label, t, onClick, title) =>
+    dom.el("button", { type: "button", class: "primary", "data-t": t, title, onclick: onClick }, label);
+
+  // a button that is only an icon; `title` says what it does
+  dom.icon = (name, t, onClick, title, cls = "") =>
+    dom.el("button", { type: "button", class: `icon ${cls}`.trim(), "data-t": t, title, "aria-label": title, onclick: onClick }, WB.icon(name));
+
   dom.number = function (value, options, onChange) {
     const { t, min, max, step = "any", width = 70, disabled } = options;
     const input = dom.el("input", {
@@ -103,5 +111,37 @@
   dom.row = (label, ...controls) =>
     dom.el("div", { class: "row" }, label ? dom.el("span", { class: "row-label" }, label) : null, controls);
 
-  dom.group = (title, ...rows) => dom.el("fieldset", {}, dom.el("legend", {}, title), rows);
+  // Which sections of the side panel are open: { title: true | false }, kept
+  // by the browser. "*" stands for every section that was never touched.
+  const SECTIONS = "web_blot.sections";
+  const CLOSED_AT_FIRST = new Set(["Signal", "Copy setup", "Style"]);
+  let sections = {};
+  try {
+    sections = JSON.parse(localStorage.getItem(SECTIONS)) || {};
+  } catch (error) {
+    // no storage: the sections are as they are at first
+  }
+  const isOpen = (title) => (title in sections ? sections[title] : "*" in sections ? sections["*"] : !CLOSED_AT_FIRST.has(title));
+
+  // A section of the side panel: a title that folds it away, and its rows.
+  dom.group = function (title, ...rows) {
+    const body = dom.el("div", { class: "group-body" }, rows);
+    const head = dom.el("button", { type: "button", class: "group-head", "data-t": "group-head" }, WB.icon("chevron-down"), title);
+    const node = dom.el("section", { class: "group", "data-group": title }, head, body);
+    const show = (open) => {
+      node.classList.toggle("closed", !open);
+      head.setAttribute("aria-expanded", String(open));
+    };
+    show(isOpen(title));
+    head.addEventListener("click", () => {
+      sections[title] = node.classList.contains("closed");
+      show(sections[title]);
+      try {
+        localStorage.setItem(SECTIONS, JSON.stringify(sections));
+      } catch (error) {
+        // lasts until the page is closed
+      }
+    });
+    return node;
+  };
 })();
