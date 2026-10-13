@@ -93,3 +93,5 @@ dialog.help h3 { font-size: var(--text-s); text-transform: uppercase; letter-spa
 .toast button.icon { border-color: transparent; }
 @keyframes toast-in { from { transform: translateY(8px); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+input.wide-field { flex: 1; min-width: 80px; }

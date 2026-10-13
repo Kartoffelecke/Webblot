@@ -230,6 +230,27 @@ class Ui:
         self.flush()
         return text
 
+    def document(self):
+        """What is open, as text that is the same after it was written and read again: its
+        settings, without the name of the folder and the names the images go by."""
+        return self.page.evaluate(
+            """(() => { const d = WB.project.serialize(); delete d.images; d.name = "";
+                return JSON.stringify(d).replace(/"(wb|bf)":"[0-9a-f]+"/g, '"$1":"x"'); })()"""
+        )
+
+    def saved(self):
+        """Wait until everything is written, pictures and tables included."""
+        self.flush()
+        self.page.evaluate("WB.library.saveNow()")
+
+    def files(self):
+        """{ path: size } of all that is in the work folder."""
+        return dict(self.page.evaluate("WB.tree.files([]).then((all) => all.map(([path, data]) => [path.join('/'), data.length]))"))
+
+    def read(self, path):
+        """The text of a file of the work folder."""
+        return self.page.evaluate("(path) => WB.tree.readText(path.split('/'))", path)
+
     def download(self, name):
         with self.page.expect_download() as info:
             self.click(name)

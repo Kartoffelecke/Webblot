@@ -16,7 +16,7 @@
   project.SUFFIX = ".webblot.json";
 
   // The name the project goes by: its own, or that of its first blot.
-  project.title = () => state.project.name || (state.blots[0] ? state.blots[0].name : "") || "Untitled";
+  project.title = () => state.folder.name || (state.blots[0] ? state.blots[0].name : "") || "Untitled";
 
   // `encode` turns an image into what the document holds for it.
   project.serialize = function (encode = imageio.pack) {
@@ -42,7 +42,7 @@
     return {
       app: "web_blot",
       version: model.PROJECT_VERSION,
-      name: state.project.name,
+      name: state.folder.name,
       style: state.style,
       normalize: state.normalize,
       images,
@@ -126,8 +126,9 @@
       }];
     });
     app.clear();
-    state.project.name = data.name || "";
-    state.style = { ...model.style(), ...data.style };
+    state.folder.name = data.name || "";
+    // a project of this kind has one figure
+    app.figure().style = state.style = { ...model.style(), ...data.style };
     state.normalize = !!data.normalize;
     for (const blot of blots) app.addBlot(...blot);
     if (state.blots.length) state.selected = state.blots[0].id;

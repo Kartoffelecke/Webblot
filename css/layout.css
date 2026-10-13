@@ -163,3 +163,33 @@ table.library-list input:hover { border-color: var(--border-strong); }
 
 /* text that stands in the side panel outside a section */
 #side > .hint, #side > .notice { margin: var(--s3) var(--s4); }
+
+/* ---- the folders, at the left ---- */
+#tree { width: 232px; flex: none; overflow: auto; background: var(--surface); padding-bottom: var(--s5); }
+#tree-bar { width: 7px; cursor: col-resize; background: var(--surface); border-right: 1px solid var(--border); }
+#tree-bar::after { left: 3px; top: calc(50% - 16px); width: 2px; height: 32px; }
+#body.no-tree #tree, #body.no-tree #tree-bar { display: none; }
+.tree-head { display: flex; align-items: center; justify-content: space-between; padding: var(--s3) var(--s3) var(--s1) var(--s4); }
+.tree-head h2 { font-size: var(--text-s); text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-3); font-weight: 600; }
+.tree-store { padding: 0 var(--s3) var(--s2) var(--s4); border-bottom: 1px solid var(--border); font-size: var(--text-s); color: var(--text-2); }
+.tree-store .where { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-store button { height: 24px; font-size: var(--text-s); }
+#tree > .notice, #tree > .hint { margin: var(--s2) var(--s3); font-size: var(--text-s); }
+ul.tree-list, ul.tree-list ul { list-style: none; margin: 0; padding: 0; }
+ul.tree-list { padding: var(--s2) var(--s2); }
+.tree-row { display: flex; align-items: center; border-radius: var(--radius-s); }
+.tree-row:hover { background: var(--surface-3); }
+.tree-row button.icon { visibility: hidden; border-color: transparent; background: transparent; color: var(--text-3); }
+.tree-row:hover button.icon, .tree-row:focus-within button.icon { visibility: visible; }
+.tree-row button.icon:hover { color: var(--text); background: var(--border); }
+button.tree-name, button.tree-leaf { flex: 1; min-width: 0; justify-content: flex-start; border: 0; background: transparent; height: 26px; padding: 0 6px; }
+button.tree-name { font-weight: 600; }
+button.tree-name span, button.tree-leaf span { overflow: hidden; text-overflow: ellipsis; }
+button.tree-leaf { width: 100%; padding-left: 26px; color: var(--text-2); font-size: var(--text-s); height: 24px; border-radius: var(--radius-s); }
+button.tree-leaf:hover { background: var(--surface-3); color: var(--text); }
+button.tree-leaf svg.i { width: 13px; height: 13px; color: var(--text-3); }
+button.tree-leaf.current { color: var(--accent); background: var(--accent-soft); }
+.tree-folder.open > .tree-row button.tree-name { color: var(--accent); }
+.tree-folder { margin-bottom: 2px; }
+.tree-foot { display: flex; gap: var(--s2); padding: var(--s2) var(--s3); border-top: 1px solid var(--border); margin-top: var(--s2); }
+.tree-foot button { height: 24px; font-size: var(--text-s); }

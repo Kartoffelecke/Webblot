@@ -4,12 +4,20 @@
   const WB = (window.WB = window.WB || {});
   const { model, processing, lanes, quant, num } = WB;
 
+  const firstFigure = model.newFigure();
   const state = (WB.state = {
-    project: model.project(),
+    folder: model.folder(),
     blots: [], // in the order of the figure's panels, top first
+    // The figures of the folder. One of them is the one being worked on: its
+    // style is `state.style`, and how it shows each blot is in the blots
+    // themselves (include, labels, session.figure.crop, crop_on, show_bf), as
+    // if it were the only figure. The others keep theirs in `panels` until
+    // they are chosen (app.selectFigure).
+    figures: [firstFigure],
+    figure: firstFigure.id,
     selected: null, // id of the blot the side panel works on
     lane: 0, // current lane of the selected blot
-    style: model.style(),
+    style: firstFigure.style,
     tab: "prepare",
     tool: null, // "crop" | "level" | "roi" while drawing on a card
     cardWidth: 420,
@@ -180,15 +188,100 @@
     app.changed("blots", "panel");
   };
 
-  // An empty project, a new one.
+  // An empty folder, a new one, with one figure.
   app.clear = function () {
-    state.project = model.project();
+    const figure = model.newFigure();
+    state.folder = model.folder();
     state.blots = [];
     state.selected = null;
     state.lane = 0;
-    state.style = model.style();
+    state.figures = [figure];
+    state.figure = figure.id;
+    state.style = figure.style;
     state.normalize = false;
     app.changed("blots");
+  };
+
+  // ------------------------------------------------------------------ figures
+
+  app.figure = () => state.figures.find((f) => f.id === state.figure) || null;
+
+  const NOT_SHOWN = { include: false, labels: false, crop: null, crop_on: false, show_bf: false };
+
+  // Put how the blots are shown now into the figure that is being worked on.
+  app.stashFigure = function () {
+    const figure = app.figure();
+    if (!figure) return;
+    figure.style = state.style;
+    figure.panels = new Map(state.blots.map((b) => [b.id, {
+      include: b.include,
+      labels: b.labels,
+      crop: model.copy(b.session.figure.crop),
+      crop_on: b.session.figure.crop_on,
+      show_bf: b.session.figure.show_bf,
+    }]));
+  };
+
+  // Work on another figure: the blots are shown as it has them.
+  app.selectFigure = function (id) {
+    const figure = state.figures.find((f) => f.id === id);
+    if (!figure) return;
+    if (id !== state.figure) app.stashFigure();
+    state.figure = id;
+    state.style = figure.style;
+    for (const blot of state.blots) {
+      const panel = figure.panels.get(blot.id) || NOT_SHOWN;
+      blot.include = panel.include;
+      blot.labels = panel.labels;
+      blot.session.figure.crop = model.copy(panel.crop);
+      blot.session.figure.crop_on = panel.crop_on;
+      blot.session.figure.show_bf = panel.show_bf;
+    }
+    app.changed("blots", "figure", "panel");
+  };
+
+  // A name no other figure of the folder has.
+  const figureName = (name, except = null) => {
+    const taken = new Set(state.figures.filter((f) => f !== except).map((f) => f.name.toLowerCase()));
+    if (!taken.has(name.toLowerCase())) return name;
+    let n = 2;
+    while (taken.has(`${name} ${n}`.toLowerCase())) n++;
+    return `${name} ${n}`;
+  };
+
+  // A new figure, and work on it: a copy of the one being worked on, or with
+  // `empty` one that shows every blot whole.
+  app.addFigure = function (name = "Figure", empty = false) {
+    app.stashFigure();
+    const from = app.figure();
+    const figure = model.newFigure(figureName(name));
+    if (from && !empty) {
+      figure.style = model.copy(from.style);
+      figure.panels = new Map([...from.panels].map(([id, panel]) => [id, model.copy(panel)]));
+    } else {
+      figure.panels = new Map(state.blots.map((b, i) => [b.id, { ...NOT_SHOWN, include: true, labels: i === 0 }]));
+    }
+    state.figures.push(figure);
+    app.selectFigure(figure.id);
+    return figure;
+  };
+
+  app.renameFigure = function (figure, name) {
+    figure.name = figureName(name.trim() || figure.name, figure);
+    app.changed("panel");
+  };
+
+  // Remove a figure; a folder keeps at least one.
+  app.removeFigure = function (id) {
+    if (state.figures.length < 2) return;
+    const index = state.figures.findIndex((f) => f.id === id);
+    if (index < 0) return;
+    state.figures.splice(index, 1);
+    if (state.figure === id) {
+      state.figure = null; // nothing to stash: it is gone
+      app.selectFigure(state.figures[Math.min(index, state.figures.length - 1)].id);
+    }
+    app.changed("panel");
   };
 
   app.select = function (id, lane = null) {
@@ -265,6 +358,11 @@
     const f = blot.session.figure;
     const shiftBox = (b) => (b ? [b[0] + dy, b[1] + dx, b[2] + dy, b[3] + dx] : null);
     f.crop = shiftBox(f.crop);
+    // the areas the other figures have of this blot are on the same image
+    for (const figure of state.figures) {
+      const panel = figure.id !== state.figure && figure.panels.get(blot.id);
+      if (panel) panel.crop = shiftBox(panel.crop);
+    }
     blot.roi = shiftBox(blot.roi);
     for (const m of [...f.mw_markers, ...f.band_markers]) m.y += dy;
   }

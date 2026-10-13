@@ -1,7 +1,9 @@
 """The interface, driven with real mouse and keyboard events in a browser."""
 
 import base64
+import io
 import json
+import zipfile
 import re
 import struct
 
@@ -547,7 +549,7 @@ def test_export_keeps_the_image_pixels(figured, blot):
     assert png_size(open(small.path(), "rb").read())[0] < 200
 
 
-def test_project_file_restores_everything(figured, tmp_path):
+def test_folder_download_restores_everything(figured, tmp_path, blot_files):
     ui = figured
     ui.select_blot(0)
     ui.tab("prepare")
@@ -575,24 +577,31 @@ def test_project_file_restores_everything(figured, tmp_path):
     ui.state("(s.blots[1].name = 'Loading control', s.blots[1].labels = true, WB.app.changed('blots'))")
     ui.flush()
 
-    before = ui.state("JSON.stringify(WB.project.serialize())")
+    before = ui.document()
     results = ui.state("WB.app.results(s.blots[0])")
     figure = ui.state("WB.figurepanel.build().svg")
     saved = ui.download("save-project")
-    assert saved.suggested_filename == "target.webblot.json"
+    assert saved.suggested_filename == "target.zip"
     path = tmp_path / saved.suggested_filename
     saved.save_as(path)
-    stored = json.loads(path.read_text())
-    assert stored["app"] == "web_blot" and len(stored["blots"]) == 2 and stored["images"][stored["blots"][0]["wb"]]["dtype"] == "uint16"
+    with zipfile.ZipFile(path) as archive:
+        names = set(archive.namelist())
+        assert {"target/folder.json", "target/target/blot.json", "target/target/raw.tif", "target/Loading control/blot.json", "target/Figure/figure.json"} <= names
+        stored = json.loads(archive.read("target/target/blot.json"))
+        assert stored["app"] == "web_blot" and stored["kind"] == "blot" and stored["transform"]["rotation_deg"] == 1.5
+        assert np.array_equal(tifffile.imread(io.BytesIO(archive.read("target/target/raw.tif"))), tifffile.imread(blot_files[0]))
 
-    # a fresh page
+    # the page again: the folder is there as it was left
     ui.page.goto(INDEX_URL)
-    ui.page.wait_for_function("window.WB && WB.project")
-    assert ui.state("s.blots.length") == 0
-    ui.t("open-project").set_input_files(str(path))
-    ui.page.wait_for_function("WB.state.blots.length === 2")
+    ui.page.wait_for_function("window.WB && WB.library && WB.library.ready")
+    ui.page.evaluate("WB.library.ready")
     ui.flush()
-    assert ui.state("JSON.stringify(WB.project.serialize())") == before
+    assert ui.state("s.blots.length") == 2 and ui.document() == before
+    # and from the downloaded file, as another folder
+    ui.t("open-project").set_input_files(str(path))
+    ui.page.wait_for_function("WB.state.folder.dir === 'target 2' && WB.state.blots.length === 2")
+    ui.flush()
+    assert ui.document() == before
     assert ui.state("s.blots.map((b) => b.name)") == ["target", "Loading control"]
     assert ui.state("WB.app.results(s.blots[0])") == results
     assert ui.state("WB.figurepanel.build().svg") == figure
@@ -1365,22 +1374,14 @@ def test_line_width_is_in_mm_and_older_projects_keep_their_lines(ui):
     assert float(ui.t("line-width").input_value()) == pytest.approx(0.176)
     assert ui.state("WB.project.serialize().version === WB.model.PROJECT_VERSION")
 
-    # the same for a version 5 project that is stored in the browser, and for one in a library file
-    ui.page.evaluate(
-        """async () => { const d = JSON.parse(window.v5); const images = Object.fromEntries(Object.entries(d.images).map(([k, v]) => [k, WB.imageio.packedToBinary(v)]));
-            delete d.images;
-            await WB.store.put({ id: "old", name: "old one", created: 1, modified: 2, blots: ["Sample 1"] }, d, images);
-            await WB.library.open("old"); }"""
+    # the same for a version 5 project in a library file of the old kind: it becomes a folder
+    made = ui.page.evaluate(
+        """async () => { const blob = WB.zip.write([{ name: "projects/five.webblot.json", data: window.v5 }]);
+            return WB.library.importFile(new File([blob], "lib.webblot.zip")); }"""
     )
     ui.flush()
-    assert ui.state("[s.project.id, s.blots.length, s.style.line_width_mm]") == ["old", 1, pytest.approx(0.5 * 25.4 / 72)]
-    added = ui.page.evaluate(
-        """async () => { const blob = WB.zip.write([{ name: "projects/five.webblot.json", data: window.v5 }]);
-            const outcome = await WB.library.importFile(new File([blob], "lib.webblot.zip"));
-            const five = (await WB.store.list()).find((p) => p.name === "five");
-            return [outcome, (await WB.store.load(five.id)).doc.style.line_width_mm, (await WB.store.load(five.id)).doc.version]; }"""
-    )
-    assert added == [{"added": 1, "skipped": 0, "failed": []}, pytest.approx(0.5 * 25.4 / 72), ui.state("WB.model.PROJECT_VERSION")]
+    assert made == ["five"] and ui.state("[s.folder.dir, s.blots.length, s.style.line_width_mm]") == ["five", 1, pytest.approx(0.5 * 25.4 / 72)]
+    assert json.loads(ui.read("five/Figure/figure.json"))["style"]["line_width_mm"] == pytest.approx(0.5 * 25.4 / 72)
 
 
 def test_decrowd_moves_overlapping_side_labels_outwards(ui):

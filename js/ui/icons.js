@@ -24,6 +24,8 @@
     fill: "M4 12h12M12 8l4 4-4 4M20 5v14",
     image: "M4 5h16v14H4zM4 16l5-5 4 4 3-3 4 4M15.5 9.5h.01",
     grip: "M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01",
+    chart: "M4 20h16M7 16v-5M12 16V6M17 16v-8",
+    sidebar: "M4 5h16v14H4zM9 5v14",
   };
   // An icon by name; `title` is for a picture that stands alone.
   WB.icon = function (name) {

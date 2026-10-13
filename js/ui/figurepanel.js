@@ -43,16 +43,18 @@
   };
 
   const fileStem = () => (state.blots[0] ? state.blots[0].name : "figure").replace(/[^\w.-]+/g, "_");
+  // downloads of the first figure are named as before; further ones by their own name
+  const figureStem = () => (app.figure() === state.figures[0] ? `${fileStem()}_figure` : app.figure().name.replace(/[^\w.-]+/g, "_"));
 
   figurepanel.exportSvg = function () {
     const built = figurepanel.build();
-    if (built) dom.download(`${fileStem()}_figure.svg`, built.svg, "image/svg+xml");
+    if (built) dom.download(`${figureStem()}.svg`, built.svg, "image/svg+xml");
   };
 
   figurepanel.exportPng = async function () {
     const built = figurepanel.build();
     if (!built) return;
-    dom.download(`${fileStem()}_figure.png`, await figure.toPng(built, figurepanel.dpi(built)));
+    dom.download(`${figureStem()}.png`, await figure.toPng(built, figurepanel.dpi(built)));
   };
 
   // PDF goes through the browser's print dialog ("Save as PDF").
@@ -62,7 +64,7 @@
     const frame = dom.el("iframe", { style: "position:fixed;right:0;bottom:0;width:0;height:0;border:0" });
     document.body.append(frame);
     frame.contentDocument.write(
-      `<!doctype html><title>${fileStem()}_figure</title><style>@page{margin:10mm}body{margin:0}</style>${built.svg}`
+      `<!doctype html><title>${figureStem()}</title><style>@page{margin:10mm}body{margin:0}</style>${built.svg}`
     );
     frame.contentDocument.close();
     frame.contentWindow.focus();
@@ -253,7 +255,19 @@
       app.changed("figure", "panel");
     };
     const built = figurepanel.build();
+    const current = app.figure();
     return [
+      dom.group("Figure",
+        dom.row("Editing", dom.select(state.figures.map((f) => [f.id, f.name]), current.id, "figure-select", (id) => app.selectFigure(id)),
+          dom.button([WB.icon("plus"), "New"], "figure-new", () => app.addFigure("Figure", true), "Another figure of this folder, showing every blot whole."),
+          dom.button("Duplicate", "figure-duplicate", () => app.addFigure(`${current.name} copy`), "A copy of this figure, to change.")),
+        dom.row("Name", dom.text(current.name, "figure-name", (v) => app.renameFigure(current, v), { class: "wide-field" }),
+          dom.el("button", { type: "button", class: "quiet danger", "data-t": "figure-delete", disabled: state.figures.length < 2,
+            title: "Delete this figure. A folder keeps at least one.",
+            onclick: () => WB.feedback.confirm(`Delete the figure “${current.name}”? The blots stay.`, "Delete figure", { danger: true })
+              .then((yes) => yes && app.removeFigure(current.id)) }, "Delete")),
+        state.figures.length > 1 ? dom.el("p", { class: "hint" },
+          "Which blots a figure shows, their areas and the style are the figure's own. Lane labels and markers belong to the blots.") : null),
       dom.group("Figure area",
         dom.row(null, dom.toggle("Whole image", "Selected area only", fig.crop_on, "figure-crop", (v) => app.setFigureCrop(blot, v),
           "Show the whole blot in the figure, or only the area in the box on the blot.")),

@@ -24,8 +24,7 @@
     const problems = [];
     for (const file of files) {
       try {
-        if (file.name.endsWith(".json")) await library.openFile(file);
-        else if (file.name.endsWith(".zip")) await library.show(library.describe(await library.importFile(file)));
+        if (/\.(json|zip)$/i.test(file.name)) await library.importFile(file);
         else app.addBlot(file.name.replace(/\.[^.]+$/, ""), await imageio.readFile(file));
       } catch (error) {
         problems.push(`${file.name}: ${error.message}`);
@@ -49,19 +48,19 @@
       onchange: async () => { await addFiles([...files.files]); files.value = ""; },
     });
     const projectFile = dom.el("input", {
-      type: "file", accept: ".json", "data-t": "open-project", hidden: true,
+      type: "file", accept: ".json,.zip", "data-t": "open-project", hidden: true,
       onchange: async () => {
         const file = projectFile.files[0];
         projectFile.value = "";
         if (!file) return;
         try {
-          await library.openFile(file);
+          await library.importFile(file);
         } catch (error) {
-          feedback.error(`Could not open the project: ${error.message}`);
+          feedback.error(`Could not open the file: ${error.message}`);
         }
       },
     });
-    const [nameField, listButton] = library.headerParts();
+    const [nameField] = library.headerParts();
     const theme = dom.icon(WBTheme.current() === "dark" ? "sun" : "moon", "theme", () => {
       theme.replaceChildren(WB.icon(WBTheme.toggle() === "dark" ? "sun" : "moon"));
     }, "Light or dark", "quiet");
@@ -70,11 +69,9 @@
       nameField,
       library.statusPart(),
       dom.el("span", { class: "spacer" }),
-      listButton,
-      dom.button([WB.icon("upload"), "Open file…"], "open-project-button", () => projectFile.click(),
-        "Open a project file as a new project. The project that is open stays in the browser."),
-      dom.button([WB.icon("download"), "Save as file"], "save-project", project.save,
-        "Download this project as one file with all blots, settings and image data."),
+      dom.button([WB.icon("download"), "Download folder"], "save-project",
+        () => library.downloadOpen().catch((error) => feedback.error(error.message)),
+        "Download the open folder as a zip file that unpacks to what is on disk."),
       dom.el("span", { class: "divider" }),
       theme,
       dom.icon("help", "help", showHelp, "What the mouse and the keys do", "quiet"),
@@ -89,6 +86,12 @@
         dom.el("span", { class: "n" }, i + 1), label),
     ]);
     return dom.el("nav", { class: "steps", "aria-label": "Steps" },
+      dom.icon("sidebar", "tree-toggle", () => {
+        layout.treeHidden = !layout.treeHidden;
+        applyLayout();
+        storeLayout();
+        app.changed("tool");
+      }, "Show or hide the folders", "quiet"),
       dom.el("div", { class: "stepper" }, steps),
       dom.el("span", { class: "spacer" }),
       dom.el("div", { class: "view-controls" },
@@ -204,7 +207,14 @@
   // Sizes the user gave the side panel and the lower panel by dragging their
   // bars; null is the default. A setting of the page, not of the project.
   const LAYOUT = "web_blot.layout";
-  const layout = { side: null, lower: null };
+  const layout = { side: null, lower: null, tree: null, treeHidden: false };
+  const storeLayout = () => {
+    try {
+      localStorage.setItem(LAYOUT, JSON.stringify(layout));
+    } catch (error) {
+      // the size then lasts until the page is closed
+    }
+  };
   try {
     Object.assign(layout, JSON.parse(localStorage.getItem(LAYOUT)) || {});
   } catch (error) {
@@ -216,6 +226,8 @@
     const main = document.querySelector("main");
     if (!side || !main) return;
     side.style.width = layout.side ? `${num.clip(layout.side, 260, Math.max(0.6 * window.innerWidth, 260))}px` : "";
+    document.getElementById("tree").style.width = layout.tree ? `${num.clip(layout.tree, 150, Math.max(0.4 * window.innerWidth, 150))}px` : "";
+    document.getElementById("body").classList.toggle("no-tree", !!layout.treeHidden);
     main.classList.toggle("sized", !!layout.lower);
     // the blots keep at least 120 px; 31 px are the padding of the area and the bar
     const room = main.getBoundingClientRect().height - 31 - 120;
@@ -230,13 +242,7 @@
       applyLayout();
       app.changed("tool"); // the plots and overlays are drawn for the size they have
     };
-    const store = () => {
-      try {
-        localStorage.setItem(LAYOUT, JSON.stringify(layout));
-      } catch (error) {
-        // the size then lasts until the page is closed
-      }
-    };
+    const store = storeLayout;
     return dom.el("div", {
       id, class: "dragbar", "data-t": id, title,
       onpointerdown: (ev) => {
@@ -296,6 +302,7 @@
     "WB.imageio": "js/core/imageio.js",
     "WB.zip": "js/core/zip.js",
     "WB.store": "js/core/store.js",
+    "WB.tree": "js/core/tree.js",
     "WB.processing": "js/core/processing.js",
     "WB.lanes": "js/core/lanes.js",
     "WB.quant": "js/core/quantification.js",
@@ -344,6 +351,8 @@
       topBar(),
       stepsBar(),
       dom.el("div", { id: "body" },
+        dom.el("aside", { id: "tree", "aria-label": "Folders" }),
+        dragBar("tree-bar", "tree", (e) => e.clientX - 3, "Drag to change the width of the folders; double-click for the default."),
         dom.el("main", {},
           dom.el("div", { id: "workspace" }),
           dragBar("lower-bar", "lower", (e) => document.querySelector("main").getBoundingClientRect().bottom - 10 - e.clientY - 5.5, // the bar is 11 px high

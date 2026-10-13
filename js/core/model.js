@@ -6,9 +6,14 @@
 
   model.PROJECT_VERSION = 7;
 
-  // What a project is known by: its place in the browser's storage and a name
-  // (empty: it goes by the name of its first blot).
-  model.project = () => ({ id: model.newId(), name: "", created: Date.now() });
+  // The folder that is open: its name (empty: it goes by the name of its first
+  // blot) and its directory in the work folder (null: not written yet).
+  model.folder = () => ({ name: "", dir: null });
+
+  // A figure of a folder: a name, a style, and for each blot that has to do
+  // with it how it is shown: blot id -> { include, labels, crop, crop_on,
+  // show_bf }. `dir` is its directory in the folder (null: not written yet).
+  model.newFigure = (name = "Figure") => ({ id: model.newId(), name, style: model.style(), panels: new Map(), dir: null });
 
   // a random name for a project or an image
   model.newId = function () {
