@@ -440,3 +440,24 @@ def test_valley_to_valley_areas_are_those_of_fiji(app, real_blot, ref):
     assert np.all(np.abs(ratios[sizes > 2000] - 1) < 0.03)
     # regions of a few plot pixels are where Fiji's rounding shows; it always measures them smaller
     assert np.all(ratios[sizes < 200] < 1) and np.all(np.abs(ratios - 1) < 0.3)
+
+
+def test_images_are_kept_as_16_bit_tiff(app, blot, tmp_path):
+    """Whatever an image was read from, it is written as one kind of file that other programs read."""
+    encode = "(img) => { const bytes = WB.imageio.encodeTiff(img); let s = ''; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)); return btoa(s); }"
+    for image in (blot["img"], blot["img"][:7, :5], np.array([[0, 65535, 70000, -3, 12.5, 13.5, 0.4]], dtype=np.float32)):
+        data = base64.b64decode(call(app, encode, image))
+        path = tmp_path / "written.tif"
+        path.write_bytes(data)
+        with tifffile.TiffFile(path) as tif:
+            page = tif.pages[0]
+            assert page.dtype == np.uint16 and page.shape == image.shape and page.compression == 1 and page.photometric == 1
+            read = page.asarray()
+        # whole numbers as they are; others rounded, and kept within what 16 bits hold
+        assert np.array_equal(read, np.clip(np.floor(image.astype(np.float64) + 0.5), 0, 65535))
+        # and the page reads its own files back
+        back = app.evaluate(
+            "(b64) => { const img = WB.imageio.decodeTiff(Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)).buffer); return [img.w, img.h, Array.from(img.data)]; }",
+            base64.b64encode(data).decode(),
+        )
+        assert back[:2] == [image.shape[1], image.shape[0]] and np.array_equal(np.array(back[2]).reshape(image.shape), read)

@@ -94,26 +94,34 @@ Removing a blot or a lane asks nothing: the message at the bottom has an
 - **Lane labels**: rows of text, one entry per lane. Tick *Collapse*
   on a row to give neighbouring lanes with the same text one shared label: a
   merged cell in the table style, otherwise one centred text with a bar below.
-- **Projects** are stored in the browser as you work; nothing has to be
-  pressed, and after a reload the project that was open is there again. The
-  field next to the title names the project (empty: it goes by its first
-  blot). **Projects…** lists all projects of this browser: open another one,
-  start a new one, rename, duplicate, delete.
-- **Save project** downloads the open project as one `.webblot.json` with all
-  blots, settings and the original image data; **Open project…** adds such a
-  file as a new project and opens it.
-- **Export library** (under Projects…) downloads every project in one
-  `.webblot.zip`; **Import library…** adds the projects of such a file. Nothing
-  is replaced on import: a project that is here unchanged is skipped, one that
-  has changed here gets the file's version beside it as "… (imported)".
+- **Folders**: the panel at the left lists your folders; a folder is one
+  experiment, with its blots and figures under it. Click a folder to open it,
+  a blot or figure to go to it; `+` makes a new folder; the field in the header
+  renames the open one. Everything is saved as you work, nothing has to be
+  pressed, and after a reload the folder that was open is there again.
+- **Where it is kept**: in Chrome and Edge, *Choose folder…* lets the page work
+  in a folder on your computer, where every blot and figure is a directory of
+  ordinary files (see Files). After a restart of the browser the page asks once
+  to be let into the folder again. Without that, and in Safari and Firefox,
+  the same tree is kept by the browser. *Download folder* and *All* give it as
+  a zip file that unpacks to exactly what would be on disk; *Open file…* takes
+  such a zip back in. Nothing is replaced: a folder of a name that is there
+  already comes in beside it.
+- **Figures**: a folder can have several. The Figure step chooses the one being
+  edited and makes new ones. Which blots a figure shows, the area of each and
+  the style are the figure's own; lane labels and markers belong to the blots
+  and appear in every figure that shows them.
+- **From earlier versions**: project files (`.webblot.json`) and library files
+  (`.webblot.zip`) open with *Open file…* and become folders. Projects that an
+  earlier version kept in the browser are offered for moving in, and stay
+  where they were until you remove them.
 
-The browser's storage is not a backup. It belongs to one browser on one
-computer, and the browser can clear it (deleted site data, a private window, or
-on its own when space runs low). Export the library for anything you need to
-keep. If the browser stores nothing, the page says "Not stored" and works with
-project files only. Two tabs on the same project do not overwrite each other:
-the one that is behind stops saving and offers to reload or to keep its state
-as a copy.
+What the browser keeps is not a backup: it belongs to one browser on one
+computer, and the browser can clear it. A folder on disk is yours like any
+other; otherwise download what you need to keep. If the browser stores
+nothing, the page says "Not stored" and works until it is closed. Files
+changed outside the page (in Finder, or `blot.json` by hand) are read again
+when you come back to it.
 
 ## Compared with Fiji's gel analyzer
 
@@ -142,35 +150,47 @@ logarithm of the profile; that is not a constant factor and is not reproduced he
 
 ## Files
 
-A project file (`.webblot.json`, version 7):
-
 ```
-{ "app": "web_blot", "version": 7, "name": "...", "style": {...}, "normalize": false,
-  "images": { "<key>": { "w", "h", "dtype": "uint16" | "float32", "data": "<base64>" } },
-  "blots": [{ "name", "include", "labels", "roi", "session": { "transform", "lanes", "figure" },
-              "wb": "<key>", "bf": "<key>" | null, "bf_origin": {...} | null }] }
-```
-
-Each image is in the file once; blots made from the same image (*New blot from
-area*) share it. Older files still open: up to version 6 a figure area was in
-use whenever a blot had one (now `figure.crop_on` says so), version 5 had the
-line width in points (`style.line_width`; it is converted to `line_width_mm`),
-version 4 also had each image inside its blot. Versions before 4 do not open.
-
-Project files from version 4 on and library files stay readable: when a format
-changes, it gets a new version number and the page converts the older ones on
-opening (`project.upgrade` in `js/ui/project.js`).
-
-A library file (`.webblot.zip`) is an ordinary zip file:
-
-```
-library.json                    { "app": "web_blot", "kind": "library", "version": 1,
-                                  "projects": [{ "id", "name", "created", "modified", "file" }] }
-projects/<name>.webblot.json    one project file per project
+<work folder>/
+  <Folder>/                      one experiment (what a project used to be)
+    folder.json                  order of the blots, the figure last edited, the normalize option
+    <Blot>/
+      blot.json                  everything about the blot
+      raw.tif                    the image: 16-bit grey TIFF, whatever it was read from
+      brightfield.tif            its brightfield image, if it has one
+      view.png                   the blot as the page shows it: turned, cropped, exposure
+      lanes.png                  the same with lanes and peak borders drawn
+      areas.csv                  band areas, lanes by peaks
+      profiles.csv               lane, position_px, intensity, background
+    <Figure>/
+      figure.json                which blots, the area of each, the style
+      figure.svg, figure.png     the figure as it renders
 ```
 
-Unzipped, each project file opens on its own. A zip of project files without
-`library.json` can be imported too.
+- The page reads `folder.json`, `blot.json`, `raw.tif`, `brightfield.tif` and
+  `figure.json`. The pictures and tables are written for reading without the
+  page and are never read back; they follow a change after a moment.
+- A directory with `blot.json` is a blot, one with `figure.json` a figure.
+  Folders are one level: there are no folders in folders. Other files and
+  directories are left alone.
+- The names of the directories are the names shown, with characters a file
+  system does not take replaced; the name itself is in the JSON.
+- `raw.tif` holds whole numbers from 0 to 65535. An image that had other
+  values (a colour image is averaged to grey) is rounded.
+- `blot.json`: `name`, `transform` (rotation, crop, polarity, exposure), `lanes`
+  (position, size, tilt, background, peaks), `lane_labels`, `mw_markers`,
+  `band_markers` and their sides, `gel_area`, `brightfield`. Positions are in
+  pixels of the turned and cropped image, as `view.png` shows it.
+- `figure.json`: `name`, `panels` (`blot` is the blot's directory; `shown`,
+  `area`, `area_on`, `show_brightfield`, `lane_labels`), in the order of the
+  blots on the page, and `style`.
+- Each JSON has `app`, `kind` and `version` (1). When a format changes, it gets
+  a new version and the page converts the older ones on reading.
+
+Files of earlier versions still open: project files (`.webblot.json`, versions
+4 to 7; `project.upgrade` in `js/ui/project.js` converts them) and library
+files (`.webblot.zip`, a zip of project files). Each project becomes a folder
+and its one figure a figure directory.
 
 ## Limits
 
@@ -183,9 +203,11 @@ Unzipped, each project file opens on its own. A zip of project files without
 index.html
 css/           tokens (colours, sizes; light and dark), base, components, layout
 js/vendor/     UTIF.js (TIFF decoding) and pako, pinned copies with licences
-js/core/       no interface code: numerics, image reading, lanes, quantification, figure,
-               zip files, the browser's storage
-js/ui/         state, workspace cards, side panels, lane plots, project files, the library,
+js/core/       no interface code: numerics, image reading and writing, lanes,
+               quantification, figure, zip files, the work folder (on disk or in the
+               browser), the storage of earlier versions
+js/ui/         state, workspace cards, side panels, lane plots, the folders and their
+               files, project files of earlier versions,
                icons, messages and questions, theme
 tests/         browser tests (Python, Playwright)
 ```
@@ -215,7 +237,10 @@ numpy / scipy, or with the reference values recorded in `tests/data`
 change to how peaks are found, `uv run python record_reference.py` records the
 values that depend on it again; look at the difference before committing it.
 `test_ui.py` drives the interface with real mouse and keyboard events.
-`test_library.py` covers the projects in the browser and the library file.
+`test_folders.py` covers the work folder: what is written for a blot and a
+figure, names, several figures, zip files, changes from outside, files and
+storage of earlier versions, and working in a folder on disk (in Chromium, with
+a directory of the browser standing in for the folder dialog).
 `test_design.py` covers first use, the steps, folding sections, the themes
 (including that text has enough contrast in both), undo and the questions.
 `uv run python screenshots.py <folder>` writes screenshots of the main views

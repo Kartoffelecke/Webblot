@@ -364,18 +364,40 @@
     blot.disk.derived = made;
   }
 
-  // The figure being worked on as it renders now. (The others were written
-  // when they were worked on.)
+  // Build a figure that is not the one being worked on: the blots are shown as
+  // it has them for the moment of building, and as they were again after it.
+  function buildFigure(figure) {
+    if (figure.id === state.figure) return WB.figurepanel.build();
+    const current = app.figure();
+    const show = (f) => {
+      state.style = f.style;
+      for (const blot of state.blots) {
+        const p = f.panels.get(blot.id) || { include: false, labels: false, crop: null, crop_on: false, show_bf: false };
+        blot.include = p.include;
+        blot.labels = p.labels;
+        Object.assign(blot.session.figure, { crop: p.crop, crop_on: p.crop_on, show_bf: p.show_bf });
+      }
+    };
+    show(figure);
+    try {
+      return WB.figurepanel.build();
+    } finally {
+      show(current);
+    }
+  }
+
+  // A figure as it renders now.
   async function writeFigureDerived(figure) {
-    if (!figure.disk || figure.id !== state.figure) return;
-    const made = figure.disk.text + state.blots.filter((b) => b.include && b.disk).map((b) => b.disk.text).join("");
+    if (!figure.disk) return;
+    const shown = state.blots.filter((b) => b.disk && (figure.panels.get(b.id) || {}).include);
+    const made = figure.disk.text + shown.map((b) => b.disk.text).join("");
     if (figure.disk.derived === made) return;
     const store = tree.store;
     const path = [state.folder.dir, figure.disk.dir];
-    const built = WB.figurepanel.build();
+    const built = buildFigure(figure);
     if (built) {
       await store.write([...path, "figure.svg"], built.svg);
-      const png = await WB.figure.toPng(built, WB.figurepanel.dpi(built));
+      const png = await WB.figure.toPng(built, figure.style.lossless ? built.nativeDpi : figure.style.dpi);
       await store.write([...path, "figure.png"], new Uint8Array(await png.arrayBuffer()));
     } else {
       await store.remove([...path, "figure.svg"]);
@@ -430,7 +452,7 @@
       }
       setStatus("saved", store.kind === "disk" ? "Saved to disk" : "Saved",
         store.kind === "disk" ? `In the folder “${store.label}”.` : "Kept by this browser. The browser can clear its storage; download what you need to keep, or choose a folder on disk.");
-      if (wrote) scan();
+      if (wrote) await scan();
     } catch (error) {
       setStatus("failed", "Not saved", `The folder could not be written: ${error.message}`);
     }
@@ -708,7 +730,11 @@
     const folders = library.folders.map((f) => (f.name === open
       ? { name: f.name, blots: state.blots.map((b) => b.name), figures: state.figures.map((f2) => f2.name), open: true }
       : f));
-    if (!open && state.blots.length) folders.unshift({ name: project.title(), blots: state.blots.map((b) => b.name), figures: state.figures.map((f) => f.name), open: true, unsaved: true });
+    // the open folder is always there, also before it is written or listed
+    if (!folders.some((f) => f.open) && (open || state.blots.length)) {
+      folders.push({ name: open || project.title(), blots: state.blots.map((b) => b.name), figures: state.figures.map((f) => f.name), open: true, unsaved: !open });
+      folders.sort((x, y) => x.name.localeCompare(y.name));
+    }
     const row = (folder) => dom.el("li", { class: `tree-folder${folder.open ? " open" : ""}`, "data-t": "tree-folder", "data-name": folder.name },
       dom.el("div", { class: "tree-row" },
         dom.el("button", { type: "button", class: "tree-name", "data-t": "tree-open", title: folder.name,
