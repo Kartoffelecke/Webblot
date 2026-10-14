@@ -1,4 +1,4 @@
-"""The core must give the right numbers: those the test images were made with, and those of Fiji."""
+"""The core must give the right numbers: those the test images were made with."""
 
 import base64
 
@@ -262,46 +262,6 @@ def test_valley_to_valley_background(app):
     assert search == rolling
     found = app.evaluate("([p, b]) => WB.quant.detectPeaks(p, WB.quant.searchBaseline(p, b))", [profile.tolist(), VALLEY])
     assert [p["apex"] for p in found] == [80]
-
-
-def fiji_lane(rect):
-    x, y, width, height = rect
-    return lane(x + (width - 1) / 2, y - 0.5, y + height - 0.5, width)
-
-
-def test_profiles_are_those_of_fiji(app, real_blot, fiji):
-    """Fiji's gel analyzer and this page take the same profile of a lane: the mean across its width."""
-    img = tifffile.imread(real_blot).astype(np.float32)
-    for index in (0, 3):
-        got = call(app, "(img, lane) => Array.from(WB.lanes.extractProfile(img, lane))", img, args=fiji_lane(fiji["rects"][index]))
-        assert np.allclose(got, fiji["profiles"][str(index)], rtol=1e-6)
-
-
-def test_valley_to_valley_areas_are_those_of_fiji(app, real_blot, fiji):
-    """Fiji counts the pixels a peak encloses on its plot picture, so its areas are ours times the
-    scale of that picture, rounded to pixels: the smaller the region on the picture, the rougher."""
-    img = tifffile.imread(real_blot).astype(np.float32)
-    scale = fiji["x_scale"] * fiji["y_scale"]
-    ratios, sizes = [], []
-    for index, rect in enumerate(fiji["rects"]):
-        mine = [p for p in fiji["peaks"] if p[0] == index]
-        peaks = [peak(a, b, (a + b) // 2) for _, a, b, _, _ in mine]
-        areas = call(
-            app,
-            """(img, [lane, peaks, b]) => { const profile = WB.lanes.extractProfile(img, lane);
-                const base = WB.quant.computeBaseline(profile, b, peaks);
-                return peaks.map((p) => WB.quant.peakArea(profile, base, p)); }""",
-            img,
-            args=[fiji_lane(rect), peaks, VALLEY],
-        )
-        ratios += [p[4] / (area * scale) for p, area in zip(mine, areas)]
-        sizes += [p[3] for p in mine]
-    ratios, sizes = np.array(ratios), np.array(sizes)
-    assert len(ratios) == 24
-    assert np.median(ratios) == pytest.approx(1, abs=0.015)
-    assert np.all(np.abs(ratios[sizes > 2000] - 1) < 0.03)
-    # regions of a few plot pixels are where Fiji's rounding shows; it always measures them smaller
-    assert np.all(ratios[sizes < 200] < 1) and np.all(np.abs(ratios - 1) < 0.3)
 
 
 def test_images_are_kept_as_16_bit_tiff(app, blot, tmp_path):

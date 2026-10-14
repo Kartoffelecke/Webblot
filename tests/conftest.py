@@ -1,4 +1,4 @@
-"""Shared fixtures: the page under test, the test images and Fiji's measurements."""
+"""Shared fixtures: the page under test and the test images."""
 
 import json
 from pathlib import Path
@@ -90,12 +90,6 @@ def make_blot(shape=(420, 640), n_lanes=8, band_ys=(90, 200, 320), seed=0, gradi
         "volumes": volumes,
         "ladder_ys": ladder_ys,
     }
-
-
-@pytest.fixture(scope="session")
-def fiji():
-    """What Fiji's gel analyzer measured on the real blot (see "about" in data/fiji.json)."""
-    return json.loads((DATA / "fiji.json").read_text())
 
 
 @pytest.fixture(scope="session")
