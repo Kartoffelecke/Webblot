@@ -6,7 +6,9 @@ JavaScript; nothing to install, no server, images stay on your computer.
 
 ## Start
 
-Open `index.html` in a browser. Add blot images with **Add blots** or by
+Use the page on this repository's GitHub Pages site, or download the repository
+and open `index.html` in a browser: it runs the same from your own disk, with
+no server and no internet connection. Add blot images with **Add blots** or by
 dropping them on the page (16-bit TIFF, PNG, JPEG), or try **Sample**.
 
 ## Folders
