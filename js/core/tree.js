@@ -77,18 +77,36 @@
 
   const DB = "web_blot_tree";
   let opening = null;
+  function openOnce() {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open(DB, 1);
+      request.onupgradeneeded = () => {
+        // nodes: "a/b/c" -> { kind: "dir" } | { kind: "file", data: ArrayBuffer }
+        request.result.createObjectStore("nodes");
+        request.result.createObjectStore("settings"); // the folder on disk that was chosen
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error || new Error("The browser's storage could not be opened."));
+    });
+  }
+
+  // The browser can refuse to open its storage for a moment, for instance
+  // while the page before is still closing it: try again a few times before
+  // taking it that it stores nothing. A failure is not kept, so a later call
+  // tries anew.
   function database() {
     if (!opening) {
-      opening = new Promise((resolve, reject) => {
-        const request = indexedDB.open(DB, 1);
-        request.onupgradeneeded = () => {
-          // nodes: "a/b/c" -> { kind: "dir" } | { kind: "file", data: ArrayBuffer }
-          request.result.createObjectStore("nodes");
-          request.result.createObjectStore("settings"); // the folder on disk that was chosen
-        };
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error || new Error("The browser's storage could not be opened."));
-      });
+      opening = (async () => {
+        for (let attempt = 1; ; attempt++) {
+          try {
+            return await openOnce();
+          } catch (error) {
+            if (attempt >= 4 || error instanceof TypeError || error.name === "SecurityError") throw error;
+            await new Promise((resolve) => setTimeout(resolve, 250 * attempt));
+          }
+        }
+      })();
+      opening.catch(() => (opening = null));
     }
     return opening;
   }

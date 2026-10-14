@@ -30,6 +30,13 @@ def started(page, url=INDEX_URL, expect_error=False):
     return ui
 
 
+# what the page knows about where it is, for the message of a failing test
+WHERE = """({ last: localStorage.getItem("web_blot.last"), store: WB.tree.store.kind, waiting: !!WB.tree.waiting,
+    folders: WB.library.folders.map((f) => f.name), folder: WB.state.folder, blots: WB.state.blots.length,
+    status: document.querySelector("[data-t=save-status]").textContent,
+    messages: [...document.querySelectorAll(".toast")].map((t) => t.textContent) })"""
+
+
 def file_bytes(ui, path):
     return base64.b64decode(ui.page.evaluate(
         """(path) => WB.tree.store.read(path.split("/")).then((bytes) => { let s = "";
@@ -110,7 +117,7 @@ def test_a_blot_is_a_directory_that_can_be_read_without_the_page(ui, blot_files,
     # after a reload it is all there again
     before, results = ui.document(), ui.state("WB.app.results(b)")
     again = started(ui.page)
-    assert again.document() == before and again.state("WB.app.results(b)") == results
+    assert again.document() == before and again.state("WB.app.results(b)") == results, again.page.evaluate(WHERE)
     assert again.state("[s.folder.dir, s.blots.map((b) => b.name), s.figures.map((f) => f.name)]") == ["target", ["target", "control"], ["Figure"]]
     files = again.files()
     again.saved()
@@ -141,7 +148,7 @@ def test_names_are_the_directories(ui, blot_files):
     ui.saved()
     assert "2026-09 LC3/target 2/raw.tif" in ui.files() and "2026-09 LC3/target 2/view.png" in ui.files()
     again = started(ui.page)
-    assert again.state("s.blots.map((b) => b.name)") == ["target", "target"]
+    assert again.state("s.blots.map((b) => b.name)") == ["target", "target"], again.page.evaluate(WHERE)
 
 
 def test_a_brightfield_is_kept_with_its_blot(ui, blot_files, blot, tmp_path):
@@ -155,7 +162,7 @@ def test_a_brightfield_is_kept_with_its_blot(ui, blot_files, blot, tmp_path):
     doc = json.loads(ui.read("target/target/blot.json"))
     assert doc["brightfield"]["was"]["name"] == "marker"
     again = started(ui.page)
-    assert again.state("[s.blots.length, b.bfOrigin.name, b.work.bf.w]") == [1, "marker", 640]
+    assert again.state("[s.blots.length, b.bfOrigin.name, b.work.bf.w]") == [1, "marker", 640], again.page.evaluate(WHERE)
     # split off again: a blot of its own, with a directory of its own
     again.tab("prepare")
     again.click("bf-split")
@@ -361,7 +368,7 @@ def test_a_folder_changed_outside_the_page_is_read_again(ui, blot_files):
             await WB.tree.store.write(["target", "broken", "blot.json"], "{ not json"); }"""
     )
     again = started(ui.page, expect_error=True)
-    assert again.state("s.blots.length") == 1 and "broken" in again.t("toast-error").inner_text()
+    assert again.state("s.blots.length") == 1 and "broken" in again.t("toast-error").inner_text(), again.page.evaluate(WHERE)
     again.saved()
     assert again.read("target/notes/readme.txt") == "mine" and again.read("target/broken/blot.json") == "{ not json"
 
