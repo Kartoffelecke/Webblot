@@ -123,3 +123,10 @@ uv sync
 uv run playwright install chromium webkit   # once
 uv run pytest
 ```
+
+## Disclaimer
+
+This software was written entirely by Claude Code, Anthropic's AI coding
+assistant. It is provided as is, without any warranty. The repository owner
+takes no responsibility for its correctness or for any results obtained with
+it; check measurements independently before relying on them.
