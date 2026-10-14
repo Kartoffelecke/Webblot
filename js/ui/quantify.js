@@ -165,6 +165,7 @@
           const ends = (lane.baseline.linear_ends || quant.linearEnds(profile)).slice();
           ends[k] = s.value(py);
           lane.baseline.linear_ends = ends;
+          lane.baseline.from_area = false; // set by hand now
         }));
     }
 
@@ -270,7 +271,10 @@
         dom.el("td", {}, dom.number(Math.round(peak.end), { t: "peak-end", min: 0, step: 1, width: 54 },
           (v) => { peak.end = v; changed(); })),
         dom.el("td", { "data-t": "peak-area" }, num.formatG(quant.peakArea(profile, baseline, peak), 5)),
-        dom.el("td", {}, dom.icon("close", "peak-delete", () => app.removePeak(lane, peak), "Remove this peak", "small"))));
+        dom.el("td", {},
+          dom.button("To all", "peak-to-all", () => app.peakToAllLanes(blot, lane, peak),
+            "Put this region, at the same rows of the image, into every lane of the blot, in place of their peaks of the same number and those it overlaps."),
+          dom.icon("close", "peak-delete", () => app.removePeak(lane, peak), "Remove this peak", "small"))));
 
     return [
       dom.group("Lane",
@@ -290,6 +294,7 @@
         dom.row("Method", dom.select(METHOD_LABELS, b.method, "bg-method", (v) => {
           if (v === "manual" && !b.anchors.length) b.anchors = quant.baselineToAnchors(baseline);
           b.method = v;
+          if (v !== "linear") b.from_area = false;
           changed();
         })),
         dom.row("Radius", dom.number(b.radius, { t: "bg-radius", min: 2, max: 2000, step: 1, disabled: b.method !== "rolling" && b.method !== "valley" },
@@ -297,11 +302,20 @@
         b.method === "valley" ? dom.el("p", { class: "hint", "data-t": "valley-hint" },
           "Each peak is measured above the straight line between its two borders, so the borders decide the result: drag them into the valleys. The radius is only used to find peaks.") : null,
         dom.row("Line start / end",
-          dom.number(Math.round(ends[0]), { t: "bg-line-start", step: 1, disabled: !isLine }, (v) => { b.linear_ends = [v, ends[1]]; changed(); }),
-          dom.number(Math.round(ends[1]), { t: "bg-line-end", step: 1, disabled: !isLine }, (v) => { b.linear_ends = [ends[0], v]; changed(); }),
+          dom.number(Math.round(ends[0]), { t: "bg-line-start", step: 1, disabled: !isLine }, (v) => { b.linear_ends = [v, ends[1]]; b.from_area = false; changed(); }),
+          dom.number(Math.round(ends[1]), { t: "bg-line-end", step: 1, disabled: !isLine }, (v) => { b.linear_ends = [ends[0], v]; b.from_area = false; changed(); }),
           dom.el("button", { type: "button", "data-t": "bg-line-auto", disabled: !isLine || !b.linear_ends,
             title: "Take the heights from the two ends of the profile.",
-            onclick: () => { b.linear_ends = null; changed(); } }, "Auto")),
+            onclick: () => { b.linear_ends = null; b.from_area = false; changed(); } }, "Auto")),
+        isLine ? dom.row(null,
+          WB.panels.toolButton("Draw background area", "bgarea", "tool-bg-area",
+            "Draw a rectangle on empty membrane: its mean becomes the flat background of every lane."),
+          blot.bgArea ? dom.button("Remove", "bg-area-remove", () => app.setBackgroundArea(blot, null), "Remove the background area; the lines keep their height.") : null) : null,
+        isLine && blot.bgArea ? dom.el("p", { class: "hint", "data-t": "bg-area-level" },
+          `Background area: mean ${num.formatG(app.backgroundLevel(blot) || 0, 5)}. `,
+          b.from_area ? "This lane's line is at that height." : "This lane's line is set by hand; “Apply to all lanes” puts it back.") : null,
+        isLine && !blot.bgArea ? dom.el("p", { class: "hint", "data-t": "bg-area-hint" },
+          "For total protein: draw the area on empty membrane, at the height of the lanes and away from the dye front. Every lane then gets the same flat background, and what is above it, smear included, is measured.") : null,
         dom.row(null,
           dom.button("Edit by hand", "bg-edit", () => {
             if (b.method !== "manual") {
@@ -321,10 +335,20 @@
           dom.button("This lane", "detect-lane", () => quantify.detect(blot, false), "Detect the peaks of the current lane only."),
           dom.primary("Detect in all lanes", "detect-all", () => quantify.detect(blot, true)),
           dom.button("Renumber", "renumber", () => { list.forEach(quant.numberPeaks); changed(); },
-            "Number the peaks of every lane 1, 2, 3, … from the top (overwrites edited numbers).")),
-        dom.el("table", { class: "grid", "data-t": "peaks" },
+            "Number the peaks of every lane 1, 2, 3, … from the top (overwrites edited numbers)."),
+          dom.button("Remove all", "peaks-clear", () => {
+            const before = list.map((l) => l.peaks);
+            if (!before.some((peaks) => peaks.length)) return;
+            list.forEach((l) => (l.peaks = []));
+            changed();
+            WB.feedback.toast("Removed the peaks of all lanes.", { action: { label: "Undo", run: () => {
+              list.forEach((l, i) => (l.peaks = before[i]));
+              changed();
+            } } });
+          }, "Remove the peaks of every lane of this blot.")),
+        dom.el("div", { class: "scroll-x" }, dom.el("table", { class: "grid", "data-t": "peaks" },
           dom.el("tr", {}, ["Use", "Peak #", "Start", "End", "Area", ""].map((h) => dom.el("th", {}, h))),
-          peakRows)),
+          peakRows))),
       dom.group("Band areas",
         dom.el("p", { class: "hint" }, "One row per lane, one column per peak number."),
         dom.row(null, dom.check("Normalize across lanes", state.normalize, "normalize", (v) => {

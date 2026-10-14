@@ -123,6 +123,27 @@ nothing, the page says "Not stored" and works until it is closed. Files
 changed outside the page (in Finder, or `blot.json` by hand) are read again
 when you come back to it.
 
+## Total protein
+
+For a total protein stain (Stain-Free, Ponceau, Revert) the measure is the
+signal of a whole region of each lane, smear included, not of single bands:
+
+1. In the Quantify step, choose the background *Straight line* and **Draw
+   background area** on empty membrane: beside the lanes, at their height, not
+   under the dye front. The mean inside it becomes the flat background of every
+   lane, and stays so when the box is moved or the image is cropped. A lane
+   whose line is set by hand leaves it; *Apply to all lanes* brings them back.
+2. Mark the region in one lane as a peak (double-click, then drag its borders)
+   and press **To all** in its row of the peaks table: every lane gets the
+   region at the same rows of the image. *Remove all* clears the peaks of all
+   lanes first, if detection found single bands.
+
+A rolling ball or valley-to-valley lines would take the smear between the bands
+for background and measure too little. The method holds where the signal is in
+the linear range (nothing saturated inside the region), and assumes the
+background is the same across the blot: if it is not, a box on one side
+measures the lanes on the other side wrongly.
+
 ## Compared with Fiji's gel analyzer
 
 Checked against Fiji (ImageJ 1.54g) on the same lanes and peak borders;

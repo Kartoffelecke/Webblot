@@ -57,6 +57,7 @@
       mw_markers: f.mw_markers, mw_side: f.mw_side,
       band_markers: f.band_markers, band_side: f.band_side,
       gel_area: blot.roi,
+      background_area: blot.bgArea,
       brightfield: blot.raw.bf ? { file: "brightfield.tif", was: was(blot.bfOrigin) } : null,
     };
     return { doc, images };
@@ -136,7 +137,7 @@
       name: doc.name || path[path.length - 1],
       wb: await image("raw.tif"),
       bf,
-      saved: { session, include: false, labels: false, roi: doc.gel_area || null, bfOrigin: doc.brightfield ? await was(doc.brightfield.was) : null },
+      saved: { session, include: false, labels: false, roi: doc.gel_area || null, bgArea: doc.background_area || null, bfOrigin: doc.brightfield ? await was(doc.brightfield.was) : null },
       text,
     };
   }

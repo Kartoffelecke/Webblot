@@ -13,6 +13,7 @@
     unused: "#9a9a9a",
     roi: "#00c8ff",
     figure: "#00d26a",
+    background: "#5ce1e6",
     mw: "#00b7ff",
     band: "#ff3df2",
     draw: "#ff4040",
@@ -316,6 +317,19 @@
       }
     });
 
+    // the empty area that gives the lanes their flat background (over the
+    // lanes, so that it can be grabbed where it overlaps one)
+    if (blot.bgArea && state.tab === "quantify") {
+      editableRect(() => blot.bgArea, (box) => (blot.bgArea = box), {
+        t: "bg-area", color: COLORS.background, dash: "4 3", done: () => app.setBackgroundArea(blot, blot.bgArea),
+      });
+      const [y0, x0, y1, x1] = blot.bgArea;
+      add("text", {
+        x: Math.min(x0, x1) + 3 * px, y: Math.min(y0, y1) - 4 * px, "font-size": 11 * px,
+        fill: COLORS.background, class: "note marker-text",
+      }, "background");
+    }
+
     // figure area and markers
     const fig = blot.session.figure;
     if (state.tab === "figure") {
@@ -448,6 +462,8 @@
     } else if (tool === "roi") {
       blot.roi = box;
       app.changed("lanes");
+    } else if (tool === "bgarea") {
+      app.setBackgroundArea(blot, box);
     }
   };
 

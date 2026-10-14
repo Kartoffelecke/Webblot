@@ -34,6 +34,7 @@
       include: b.include,
       labels: b.labels,
       roi: b.roi,
+      bg_area: b.bgArea,
       session: b.session,
       wb: ref(b.raw.wb),
       bf: ref(b.raw.bf),
@@ -122,6 +123,7 @@
         include: saved.include,
         labels: saved.labels,
         roi: saved.roi,
+        bgArea: saved.bg_area || null,
         bfOrigin: unpackOrigin(saved.bf_origin),
       }];
     });

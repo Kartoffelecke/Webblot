@@ -79,6 +79,9 @@
       include: saved ? saved.include : true,
       labels: saved ? saved.labels : !state.blots.length, // lane labels go above the top panel
       roi: saved ? saved.roi : null, // gel area for lane detection [y0, x0, y1, x1]
+      // an empty area of the membrane whose mean is the flat background of the
+      // lanes that take it (their baseline has `from_area`) [y0, x0, y1, x1]
+      bgArea: saved ? saved.bgArea || null : null,
       bfOrigin: saved ? saved.bfOrigin || null : null,
       // shapes drawn on the card that are not applied yet: a crop rectangle
       // [y0, x0, y1, x1] and a line to straighten along [[y, x], [y, x]]
@@ -320,7 +323,63 @@
     blot.work.bfRange = bf ? [num.min(bf.data), num.max(bf.data)] : null;
     if (!t.contrast_limits) t.contrast_limits = processing.autoContrast(wb);
     blot.cache = { signal: null, profiles: new Map() };
+    app.syncBackground(blot);
     app.changed("image");
+  };
+
+  // ------------------------------------------------------------- background
+
+  // The mean of the measured signal in the blot's background area; null if it has none.
+  app.backgroundLevel = function (blot) {
+    if (!blot.bgArea || !blot.work) return null;
+    const { w, h } = blot.work.wb;
+    const box = processing.clipCrop(blot.bgArea.map((v) => v + 0.5), w, h);
+    if (!box) return null;
+    const signal = app.signal(blot);
+    let sum = 0;
+    for (let y = box[0]; y < box[2]; y++) for (let x = box[1]; x < box[3]; x++) sum += signal.data[y * w + x];
+    return sum / ((box[2] - box[0]) * (box[3] - box[1]));
+  };
+
+  // Lines of the lanes that take their height from the background area, at its level now.
+  app.syncBackground = function (blot) {
+    const level = app.backgroundLevel(blot);
+    if (level === null) return;
+    for (const lane of blot.session.lanes)
+      if (lane.baseline.from_area && lane.baseline.method === "linear") lane.baseline.linear_ends = [level, level];
+  };
+
+  // Set the background area of a blot (null: none); every lane takes its line from it.
+  app.setBackgroundArea = function (blot, box) {
+    blot.bgArea = box;
+    for (const lane of blot.session.lanes) {
+      if (box) lane.baseline = { ...lane.baseline, method: "linear", from_area: true };
+      else lane.baseline.from_area = false;
+    }
+    app.syncBackground(blot);
+    app.changed("quant", "lanes", "panel");
+  };
+
+  // Put a peak at the same image rows as `peak` of `lane` into every other lane
+  // of the blot, in place of the peaks there of the same number and those that
+  // overlap it. For one region measured in every lane.
+  app.peakToAllLanes = function (blot, lane, peak) {
+    const top = lanes.profileToImageY(lane, Math.min(peak.start, peak.end));
+    const bottom = lanes.profileToImageY(lane, Math.max(peak.start, peak.end));
+    for (const other of blot.session.lanes) {
+      if (other === lane) continue;
+      const { profile, baseline } = app.curves(blot, other);
+      const n = profile.length;
+      const a = num.clip(lanes.positionAtImageY(other, top), 0, n - 1);
+      const b = num.clip(lanes.positionAtImageY(other, bottom), 0, n - 1);
+      if (b - a < 1) continue;
+      let apex = Math.round(a);
+      for (let i = Math.ceil(a); i <= Math.floor(b); i++) if (profile[i] - baseline[i] > profile[apex] - baseline[apex]) apex = i;
+      other.peaks = other.peaks.filter((p) => p.band_id !== peak.band_id && (Math.max(p.start, p.end) < a || Math.min(p.start, p.end) > b));
+      other.peaks.push({ start: a, end: b, apex, band_id: peak.band_id, quantify: true });
+      other.peaks.sort((p, q) => p.apex - q.apex);
+    }
+    app.changed("quant", "panel");
   };
 
   // --------------------------------------------------------------- transforms
@@ -364,6 +423,7 @@
       if (panel) panel.crop = shiftBox(panel.crop);
     }
     blot.roi = shiftBox(blot.roi);
+    blot.bgArea = shiftBox(blot.bgArea);
     for (const m of [...f.mw_markers, ...f.band_markers]) m.y += dy;
   }
 
@@ -408,6 +468,7 @@
       include: blot.include,
       labels: false, // the blots that were there keep the lane labels
       roi: model.copy(blot.roi),
+      bgArea: model.copy(blot.bgArea),
       bfOrigin: copyOrigin(blot.bfOrigin),
     });
     let at = state.blots.indexOf(blot) + 1;
@@ -433,6 +494,7 @@
   app.copySetup = function (source, target) {
     model.copySetup(source.session, target.session);
     target.roi = model.copy(source.roi);
+    target.bgArea = model.copy(source.bgArea);
     app.rework(target);
     app.changed("lanes", "figure", "quant", "panel");
   };

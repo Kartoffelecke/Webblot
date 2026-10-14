@@ -95,3 +95,5 @@ dialog.help h3 { font-size: var(--text-s); text-transform: uppercase; letter-spa
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 
 input.wide-field { flex: 1; min-width: 80px; }
+
+table.grid td > button:not(.icon) { height: 22px; padding: 0 7px; font-size: var(--text-s); margin-right: 2px; }

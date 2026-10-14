@@ -78,6 +78,7 @@
           t.bands_dark = v;
           blot.cache.signal = null;
           blot.cache.profiles.clear();
+          app.syncBackground(blot);
           app.changed("display", "quant");
         }, "Tick if the image file shows dark bands on a light background. Quantification then measures darkness instead of brightness.")),
       dom.group("Brightfield",
@@ -131,6 +132,11 @@
       return;
     }
     blot.session.lanes = found;
+    // new lanes take their line from the background area, if the blot has one
+    if (blot.bgArea) {
+      for (const lane of found) lane.baseline = { ...lane.baseline, method: "linear", from_area: true };
+      app.syncBackground(blot);
+    }
     state.lane = 0;
     app.changed("lanes", "quant", "panel");
   };

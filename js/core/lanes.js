@@ -51,6 +51,12 @@
     return lanes.yCenter(lane) + (pos - 0.5 * lanes.length(lane)) * u[0];
   };
 
+  // position along the lane at image row y (on the centre line); the inverse of profileToImageY
+  lanes.positionAtImageY = function (lane, y) {
+    const { u } = axes(lane.tilt_deg);
+    return (y - lanes.yCenter(lane)) / u[0] + 0.5 * lanes.length(lane);
+  };
+
   // bilinear sample with coordinates clamped to the image
   function sample(img, y, x) {
     const { w, h, data } = img;
