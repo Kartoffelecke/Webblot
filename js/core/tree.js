@@ -261,6 +261,10 @@
     return tree.store;
   };
 
+  // A setting of the page kept with the folders: read with one argument, written
+  // (null: removed) with two. Unlike localStorage, a write is on disk when it resolves.
+  tree.setting = setting;
+
   tree.browserStore = browserStore;
   tree.diskStore = diskStore;
 

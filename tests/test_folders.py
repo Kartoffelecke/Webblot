@@ -538,3 +538,21 @@ def test_working_in_a_folder_on_disk(browser, browser_name, served, blot_files, 
     ui.page.wait_for_function("document.querySelector('[data-t=tree-store]').textContent.includes('Kept in this browser') && WB.state.blots.length === 1")
     assert ui.page.evaluate("WB.tree.store.kind") == "browser" and ui.files() == kept
     context.close()
+
+
+def test_the_open_folder_is_remembered_where_a_reload_finds_it(ui, blot_files):
+    ui.add_files(blot_files[0])
+    ui.saved()
+    # kept with the folders, written before the save is done
+    assert ui.page.evaluate("WB.tree.setting('web_blot.last')") == "target"
+    # a reload at once after a change finds it
+    ui.click("tree-new")
+    ui.page.wait_for_function("WB.state.folder.dir === 'New folder'")
+    ui.add_files(blot_files[1])
+    ui.saved()
+    again = started(ui.page)
+    assert again.state("[s.folder.dir, s.blots.map((b) => b.name)]") == ["New folder", ["control"]], again.page.evaluate(WHERE)
+    # where an earlier version kept it in localStorage, that is read
+    again.page.evaluate("(async () => { await WB.tree.setting('web_blot.last', null); localStorage.setItem('web_blot.last', 'target'); })()")
+    later = started(again.page)
+    assert later.state("[s.folder.dir, s.blots.map((b) => b.name)]") == ["target", ["target"]], later.page.evaluate(WHERE)

@@ -138,6 +138,9 @@ class Ui:
         return self.page.locator(f"[data-t={name}]").nth(nth)
 
     def click(self, name, nth=0):
+        # let a rebuild of the panel that is still to come happen first, so that the
+        # click does not land on a button that is being replaced
+        self.flush()
         self.t(name, nth).click()
 
     def set(self, name, value, nth=0):

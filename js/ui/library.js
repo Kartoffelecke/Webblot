@@ -19,21 +19,41 @@
   const DELAY_DERIVED = 1500; // and before the pictures and tables are
 
   const pretty = (value) => JSON.stringify(value, null, 1) + "\n";
-  const remember = (name, value) => {
+
+  // Settings that must survive a reload right after they change (which folder
+  // was open, whether the old projects were moved in) are kept with the
+  // folders: localStorage is written to disk a moment later, so a reload just
+  // after a change could still see the old value. Earlier versions kept them in
+  // localStorage, which is read when there is nothing else.
+  const known_settings = new Map();
+  async function remember(name, value) {
+    if (known_settings.get(name) === value) return;
+    known_settings.set(name, value);
+    if (tree.store.kind === "none") return;
     try {
-      if (value === null) localStorage.removeItem(name);
-      else localStorage.setItem(name, value);
+      await tree.setting(name, value);
     } catch (error) {
-      // no localStorage here
+      // nothing is stored here
     }
-  };
-  const recall = (name) => {
+  }
+  async function recall(name) {
+    let value = undefined;
     try {
-      return localStorage.getItem(name);
+      if (tree.store.kind !== "none") value = await tree.setting(name);
     } catch (error) {
-      return null;
+      value = undefined;
     }
-  };
+    if (value === undefined || value === null) {
+      try {
+        value = localStorage.getItem(name);
+      } catch (error) {
+        value = null;
+      }
+    }
+    known_settings.set(name, value);
+    return value;
+  }
+  let moved = null; // what was done with the old projects: null, "copied" or "removed"
   const bufferOf = (bytes) => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
 
   // ------------------------------------------------------------ the documents
@@ -427,7 +447,7 @@
         state.folder.dir = dir;
         wrote = true;
       }
-      remember(LAST, state.folder.dir);
+      await remember(LAST, state.folder.dir);
       app.stashFigure();
       // what is no longer in the folder goes from the disk too
       for (const item of [...known]) {
@@ -495,7 +515,7 @@
   library.open = async function (dir) {
     await library.saveNow();
     await load(dir);
-    remember(LAST, dir);
+    await remember(LAST, dir);
     setStatus("saved", tree.store.kind === "disk" ? "Saved to disk" : "Saved");
     renderTree();
   };
@@ -508,7 +528,7 @@
     const names = new Set((await tree.store.list([])).map((e) => e.name.toLowerCase()));
     state.folder.name = state.folder.dir = tree.freeName(name, names);
     await tree.store.mkdir([state.folder.dir]);
-    remember(LAST, state.folder.dir);
+    await remember(LAST, state.folder.dir);
     app.changed("panel");
     await scan();
   };
@@ -520,7 +540,7 @@
       await queue;
       app.clear();
       detach();
-      remember(LAST, null);
+      await remember(LAST, null);
     }
     await tree.store.remove([dir]);
     await scan();
@@ -620,7 +640,8 @@
 
   async function findOld() {
     try {
-      oldProjects = recall(MOVED) === "removed" ? [] : await WB.store.list();
+      moved = await recall(MOVED);
+      oldProjects = moved === "removed" ? [] : await WB.store.list();
     } catch (error) {
       oldProjects = [];
     }
@@ -641,7 +662,8 @@
         failed.push(`${meta.name}: ${error.message}`);
       }
     }
-    remember(MOVED, "copied");
+    moved = "copied";
+    await remember(MOVED, moved);
     if (failed.length) WB.feedback.error(`Could not move:\n${failed.join("\n")}`);
     if (first) await library.open(first);
     await scan();
@@ -650,7 +672,8 @@
   library.removeOld = async function () {
     for (const meta of oldProjects) await WB.store.remove(meta.id);
     oldProjects = [];
-    remember(MOVED, "removed");
+    moved = "removed";
+    await remember(MOVED, moved);
     renderTree();
   };
 
@@ -677,7 +700,7 @@
     app.clear();
     detach();
     await scan();
-    const last = recall(LAST);
+    const last = await recall(LAST);
     const dir = library.folders.some((f) => f.name === last) ? last : library.folders.length ? library.folders[0].name : null;
     if (dir) await library.open(dir);
     renderTree();
@@ -775,10 +798,10 @@
       dom.el("div", { class: "tree-head" }, dom.el("h2", {}, "Folders"),
         dom.icon("plus", "tree-new", act(() => library.newFolder()), "New folder", "small")),
       storageLine(),
-      oldProjects.length && recall(MOVED) !== "copied" ? dom.el("div", { class: "notice", "data-t": "tree-old" },
+      oldProjects.length && moved !== "copied" ? dom.el("div", { class: "notice", "data-t": "tree-old" },
         `${oldProjects.length} project${oldProjects.length === 1 ? "" : "s"} from before ${oldProjects.length === 1 ? "is" : "are"} still stored the old way. `,
         dom.primary("Move in", "tree-move-old", act(library.moveOld), "Write them into the work folder as folders. The old copies stay until you remove them.")) : null,
-      oldProjects.length && recall(MOVED) === "copied" ? dom.el("p", { class: "hint", "data-t": "tree-old-copied" },
+      oldProjects.length && moved === "copied" ? dom.el("p", { class: "hint", "data-t": "tree-old-copied" },
         "The projects from before are folders now. ",
         dom.button("Remove the old copies", "tree-remove-old", act(async () => {
           if (await WB.feedback.confirm(`Remove the ${oldProjects.length} old copies from the browser's storage? The folders stay.`, "Remove old copies", { danger: true })) await library.removeOld();
@@ -845,12 +868,12 @@
       else library.refresh().catch(() => {});
     });
     await scan();
-    const last = recall(LAST);
+    const last = await recall(LAST);
     if (last && !state.blots.length && library.folders.some((f) => f.name === last)) {
       try {
         await library.open(last);
       } catch (error) {
-        remember(LAST, null);
+        await remember(LAST, null);
         WB.feedback.error(`The folder “${last}” could not be opened: ${error.message}`);
       }
     }
