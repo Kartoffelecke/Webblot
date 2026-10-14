@@ -851,6 +851,7 @@
         await library.open(last);
       } catch (error) {
         remember(LAST, null);
+        WB.feedback.error(`The folder “${last}” could not be opened: ${error.message}`);
       }
     }
     schedule();

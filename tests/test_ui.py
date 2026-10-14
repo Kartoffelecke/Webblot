@@ -1407,7 +1407,9 @@ def test_decrowd_moves_overlapping_side_labels_outwards(ui):
                 if a["left"] < b["right"] and b["left"] < a["right"] and a["top"] < b["bottom"] and b["top"] < a["bottom"]]
 
     off = {f["text"]: f for f in ui.state(labels)}
-    assert len({round(f["right"], 2) for f in off.values()}) == 1 and len({round(f["line"], 2) for f in off.values()}) == 1
+    # one column: the same right edge and line length (within what the shapes of the letters add)
+    spread = lambda key: max(f[key] for f in off.values()) - min(f[key] for f in off.values())
+    assert spread("right") < 0.5 and spread("line") < 0.01
     assert overlapping(list(off.values()))
 
     ui.t("decrowd").check()

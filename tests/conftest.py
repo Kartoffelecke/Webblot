@@ -143,7 +143,10 @@ class Ui:
     def set(self, name, value, nth=0):
         """Type into a field and commit it, as leaving the field does."""
         field = self.t(name, nth)
+        # select what is there first: typing into a number field does not always replace it (WebKit on Linux)
+        field.select_text()
         field.fill(str(value))
+        assert field.input_value() == str(value), f"{name}: {field.input_value()!r} instead of {value!r}"
         field.dispatch_event("change")
         self.flush()
 
