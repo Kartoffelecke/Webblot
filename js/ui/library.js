@@ -357,7 +357,7 @@
     const lines = ["lane,position_px,intensity,background"];
     blot.session.lanes.forEach((lane, i) => {
       const { profile, baseline } = app.curves(blot, lane);
-      for (let k = 0; k < profile.length; k++) lines.push(`${i + 1},${k},${WB.num.formatG(profile[k])},${WB.num.formatG(baseline[k])}`);
+      for (let k = 0; k < profile.length; k++) lines.push(`${i + 1},${k},${WB.num.format(profile[k])},${WB.num.format(baseline[k])}`);
     });
     return lines.join("\n") + "\n";
   }

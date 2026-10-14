@@ -1,15 +1,8 @@
-// Numerical helpers that mirror numpy / scipy functions of the same names.
-// Everything works on plain arrays or typed arrays of numbers.
+// Numerical helpers. Everything works on plain arrays or typed arrays of numbers.
 (function () {
   "use strict";
   const WB = (window.WB = window.WB || {});
   const num = (WB.num = {});
-
-  // Python's round(): halves go to the even neighbour.
-  num.round = function (x) {
-    const r = Math.round(x);
-    return Math.abs(x % 1) === 0.5 && r % 2 !== 0 ? r - 1 : r;
-  };
 
   num.clip = (x, lo, hi) => Math.min(Math.max(x, lo), hi);
 
@@ -55,7 +48,7 @@
     return n % 2 ? s[(n - 1) / 2] : 0.5 * (s[n / 2 - 1] + s[n / 2]);
   };
 
-  // np.percentile with linear interpolation; qs in percent.
+  // Percentiles, interpolated linearly between the sorted values; qs in percent.
   num.percentiles = function (a, qs) {
     const s = sorted(a);
     return qs.map((q) => {
@@ -66,23 +59,7 @@
     });
   };
 
-  num.linspace = function (a, b, n) {
-    if (n === 1) return [a];
-    const out = new Array(n);
-    for (let i = 0; i < n; i++) out[i] = a + ((b - a) * i) / (n - 1);
-    out[n - 1] = b;
-    return out;
-  };
-
-  // np.arange for float steps
-  num.arange = function (start, stop, step = 1) {
-    const n = Math.max(Math.ceil((stop - start) / step), 0);
-    const out = new Array(n);
-    for (let i = 0; i < n; i++) out[i] = start + i * step;
-    return out;
-  };
-
-  // np.interp: xp increasing; clamps outside the range.
+  // Linear interpolation at x of the points (xp, fp), xp increasing; clamped outside them.
   num.interp = function (x, xp, fp) {
     const n = xp.length;
     if (x <= xp[0]) return fp[0];
@@ -107,7 +84,7 @@
     return y[i] + (x - i) * (y[i + 1] - y[i]);
   };
 
-  // index of an out-of-range sample under scipy's boundary modes
+  // the sample that stands in for one outside the array: the nearest one, or its mirror image
   function edgeIndex(i, n, mode) {
     if (mode === "nearest") return i < 0 ? 0 : i >= n ? n - 1 : i;
     // "reflect": d c b a | a b c d | d c b a
@@ -116,7 +93,7 @@
     return i;
   }
 
-  // scipy.ndimage.gaussian_filter1d (truncate = 4)
+  // Gaussian smoothing, the kernel cut off at 4 sigma
   num.gaussian1d = function (a, sigma, mode = "reflect") {
     const n = a.length;
     const radius = Math.floor(4 * sigma + 0.5);
@@ -135,7 +112,7 @@
     return out;
   };
 
-  // Filter over the window that scipy uses: centred for odd sizes; for even
+  // Filter over a window of `size` samples: centred for odd sizes; for even
   // sizes it reaches one sample further to the left, and `origin` shifts it.
   function windowFilter(a, size, mode, combine, init, origin = 0) {
     const n = a.length;
@@ -149,7 +126,7 @@
     return out;
   }
 
-  // running minimum / maximum / mean (scipy's 1D filters)
+  // running minimum / maximum / mean
   num.minFilter = (a, size, mode = "nearest", origin = 0) =>
     windowFilter(a, size, mode, Math.min, Infinity, origin);
   num.maxFilter = (a, size, mode = "nearest", origin = 0) =>
@@ -160,9 +137,8 @@
     return out;
   };
 
-  // scipy.ndimage.grey_opening with a flat window: erosion, then dilation. For
-  // even sizes the dilation window is mirrored, which is what makes the pair an
-  // opening.
+  // Opening with a flat window: erosion, then dilation. For even sizes the
+  // dilation window is mirrored, which is what makes the pair an opening.
   num.greyOpening = (a, size, mode = "nearest") =>
     num.maxFilter(num.minFilter(a, size, mode), size, mode, size % 2 ? 0 : -1);
 
@@ -181,7 +157,7 @@
     return { slope, intercept: my - slope * mx };
   };
 
-  // --- scipy.signal.find_peaks (prominence, width and distance conditions) ---
+  // --- peak finding: local maxima, kept by prominence, width and distance ---
 
   function localMaxima(x) {
     const peaks = [];
@@ -276,20 +252,6 @@
     return { peaks, prominences: proms.map((p) => p.value) };
   };
 
-  // C-style "%.{p}g" formatting, as Python's f"{v:.6g}"
-  num.formatG = function (v, precision = 6) {
-    if (v === 0) return "0";
-    if (!isFinite(v)) return String(v);
-    const exp = Math.floor(Math.log10(Math.abs(Number(v.toPrecision(precision)))));
-    if (exp < -4 || exp >= precision) {
-      let [mantissa, e] = v.toExponential(precision - 1).split("e");
-      if (mantissa.includes(".")) mantissa = mantissa.replace(/0+$/, "").replace(/\.$/, "");
-      const sign = e[0] === "-" ? "-" : "+";
-      const digits = e.replace(/^[+-]/, "").padStart(2, "0");
-      return `${mantissa}e${sign}${digits}`;
-    }
-    let s = v.toFixed(Math.max(precision - 1 - exp, 0));
-    if (s.includes(".")) s = s.replace(/0+$/, "").replace(/\.$/, "");
-    return s;
-  };
+  // A number to `digits` significant digits, without trailing zeros.
+  num.format = (v, digits = 6) => String(Number(v.toPrecision(digits)));
 })();

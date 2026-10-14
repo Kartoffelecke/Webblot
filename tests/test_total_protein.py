@@ -1,6 +1,7 @@
 """Total protein: one flat background from an empty area, and one region in every lane."""
 
 import json
+import math
 
 import numpy as np
 import pytest
@@ -22,7 +23,7 @@ def quantified(ui, blot_files):
 
 def expected_level(box, image):
     """Mean of the pixels inside a drawn box (pixel edges at .5), as the page takes it."""
-    y0, x0, y1, x1 = (round(v + 0.5) for v in box)  # whole pixels, halves to the even one
+    y0, x0, y1, x1 = (math.floor(v + 1) for v in box)  # whole pixels, halves up (Math.round)
     return float(image[min(y0, y1):max(y0, y1), min(x0, x1):max(x0, x1)].astype(np.float64).mean())
 
 

@@ -103,7 +103,8 @@
   // Sample a computed baseline into editable anchor points.
   quant.baselineToAnchors = function (curve, nAnchors = 8) {
     const n = curve.length;
-    const xs = [...new Set(num.linspace(0, n - 1, Math.min(nAnchors, n)).map(num.round))];
+    const k = Math.min(nAnchors, n);
+    const xs = [...new Set(Array.from({ length: k }, (_, i) => (k === 1 ? 0 : Math.round(((n - 1) * i) / (k - 1)))))];
     return xs.map((i) => [i, curve[i]]);
   };
 
@@ -165,8 +166,8 @@
     let hi = limits ? Math.floor(limits[1]) : n - 1;
     lo = Math.max(lo, 0);
     hi = Math.min(hi, n - 1);
-    const a = num.clip(num.round(position - search), lo, hi);
-    const b = num.clip(num.round(position + search), lo, hi);
+    const a = num.clip(Math.round(position - search), lo, hi);
+    const b = num.clip(Math.round(position + search), lo, hi);
     if (b <= a) return null;
     const apex = num.argmax(y, a, b + 1);
     if (y[apex] <= 0) return null;
@@ -177,8 +178,8 @@
 
   // Integer sample range [a, b] that a peak covers.
   quant.peakBounds = function (peak, n) {
-    const a = num.clip(num.round(Math.min(peak.start, peak.end)), 0, n - 1);
-    const b = num.clip(num.round(Math.max(peak.start, peak.end)), 0, n - 1);
+    const a = num.clip(Math.round(Math.min(peak.start, peak.end)), 0, n - 1);
+    const b = num.clip(Math.round(Math.max(peak.start, peak.end)), 0, n - 1);
     return [a, b];
   };
 
@@ -236,7 +237,7 @@
   quant.tableToCsv = function (bands, rows, sep = ",", headers = true) {
     const lines = headers ? [["Lane", ...bands.map((b) => `Peak ${b}`)].join(sep)] : [];
     rows.forEach((row, i) => {
-      const values = row.map((v) => (v === null ? "" : num.formatG(v)));
+      const values = row.map((v) => (v === null ? "" : num.format(v)));
       lines.push((headers ? [i + 1, ...values] : values).join(sep));
     });
     return lines.join("\n") + "\n";

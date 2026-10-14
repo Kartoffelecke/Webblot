@@ -397,8 +397,8 @@
       const [cy, cx] = processing.toRotated(w, h, angle, centre);
       const size = processing.rotatedSize(w, h, angle);
       // moved inside the image if it would stick out of it
-      const top = num.clip(num.round(cy - (y1 - y0 - 1) / 2), 0, Math.max(size.h - (y1 - y0), 0));
-      const left = num.clip(num.round(cx - (x1 - x0 - 1) / 2), 0, Math.max(size.w - (x1 - x0), 0));
+      const top = num.clip(Math.round(cy - (y1 - y0 - 1) / 2), 0, Math.max(size.h - (y1 - y0), 0));
+      const left = num.clip(Math.round(cx - (x1 - x0 - 1) / 2), 0, Math.max(size.w - (x1 - x0), 0));
       t.crop = [top, left, Math.min(top + y1 - y0, size.h), Math.min(left + x1 - x0, size.w)];
       app.changed("lanes", "figure", "quant");
     } else if (t.crop) app.setCrop(blot, null);

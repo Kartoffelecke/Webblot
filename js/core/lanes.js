@@ -76,8 +76,8 @@
 
   // Mean intensity across the lane width for every pixel step along the lane.
   lanes.extractProfile = function (img, lane) {
-    const n = Math.max(num.round(lanes.length(lane)), 1);
-    const m = Math.max(num.round(lane.width), 1);
+    const n = Math.max(Math.round(lanes.length(lane)), 1);
+    const m = Math.max(Math.round(lane.width), 1);
     const { u, v } = axes(lane.tilt_deg);
     const yc = lanes.yCenter(lane);
     const out = new Float64Array(n);
@@ -104,9 +104,13 @@
     const cum = Array.from(profile, (v) => v - base);
     let best = null;
     let bestScore = -Infinity;
-    for (const pitch of num.linspace((MIN_FILL * w) / n, w / n, 20)) {
+    for (let p = 0; p < 20; p++) {
+      const pitch = ((MIN_FILL + ((1 - MIN_FILL) * p) / 19) * w) / n;
       const span = pitch * (n - 1);
-      for (const offset of num.arange(pitch / 2, w - span - pitch / 2 + 1, Math.max(pitch / 20, 1))) {
+      const step = Math.max(pitch / 20, 1);
+      const count = Math.ceil((w - span - pitch + 1) / step);
+      for (let k = 0; k < count; k++) {
+        const offset = pitch / 2 + k * step;
         let score = 0;
         const centers = [];
         for (let i = 0; i < n; i++) {
@@ -150,10 +154,10 @@
     let y1 = h;
     let x1 = w;
     if (roi) {
-      y0 = Math.max(num.round(roi[0]), 0);
-      x0 = Math.max(num.round(roi[1]), 0);
-      y1 = Math.min(num.round(roi[2]), h);
-      x1 = Math.min(num.round(roi[3]), w);
+      y0 = Math.max(Math.round(roi[0]), 0);
+      x0 = Math.max(Math.round(roi[1]), 0);
+      y1 = Math.min(Math.round(roi[2]), h);
+      x1 = Math.min(Math.round(roi[3]), w);
     }
     const rw = x1 - x0;
     const rh = y1 - y0;

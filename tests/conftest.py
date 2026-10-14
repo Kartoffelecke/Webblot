@@ -1,4 +1,4 @@
-"""Shared fixtures: the page under test, the test images and the reference values."""
+"""Shared fixtures: the page under test, the test images and Fiji's measurements."""
 
 import json
 from pathlib import Path
@@ -87,32 +87,20 @@ def make_blot(shape=(420, 640), n_lanes=8, band_ys=(90, 200, 320), seed=0, gradi
         "bf": to16(bf),
         "centers": centers,
         "band_ys": np.asarray(band_ys, float),
+        "volumes": volumes,
         "ladder_ys": ladder_ys,
     }
 
 
 @pytest.fixture(scope="session")
-def ref():
-    """The recorded numbers the core must reproduce: data/reference.json, and the long curves in data/reference.npz."""
-    values = json.loads((DATA / "reference.json").read_text())
-    with np.load(DATA / "reference.npz") as curves:
-        values.update({key: curves[key] for key in curves.files})
-    return values
-
-
-def checked(pixels, expected):
-    """`pixels`, after making sure it is the image the reference values were recorded for."""
-    assert float(pixels.sum(dtype=np.float64)) == pytest.approx(expected, rel=1e-12), (
-        "the generated test image has changed (another numpy?), so the reference values do not apply"
-    )
-    return pixels
+def fiji():
+    """What Fiji's gel analyzer measured on the real blot (see "about" in data/fiji.json)."""
+    return json.loads((DATA / "fiji.json").read_text())
 
 
 @pytest.fixture(scope="session")
-def blot(ref):
+def blot():
     b = make_blot()
-    checked(b["wb"], ref["fingerprint"]["wb"])
-    checked(b["bf"], ref["fingerprint"]["bf"])
     b["img"] = b["wb"].astype(np.float32)
     return b
 
@@ -285,11 +273,11 @@ def ui(app):
 
 
 @pytest.fixture
-def blot_files(tmp_path, blot, ref):
+def blot_files(tmp_path, blot):
     """Two synthetic blots as TIFF files."""
     import tifffile
 
-    control = checked(make_blot(seed=5)["wb"], ref["fingerprint"]["control"])
+    control = make_blot(seed=5)["wb"]
     paths = []
     for name, data in (("target", blot["wb"]), ("control", control)):
         path = tmp_path / f"{name}.tif"

@@ -8,7 +8,7 @@
 
   processing.image = (w, h, data) => ({ w, h, data: data || new Float32Array(w * h) });
 
-  // np.rot90(image, k): quarter turns counter-clockwise
+  // k quarter turns counter-clockwise
   function rot90(img, k) {
     k = ((k % 4) + 4) % 4;
     let cur = img;
@@ -56,8 +56,8 @@
     return [f.c * (y - f.offY) - f.s * (x - f.offX), f.s * (y - f.offY) + f.c * (x - f.offX)];
   };
 
-  // Rotate with canvas expansion; corners are filled with the median
-  // (scipy.ndimage.rotate, reshape=True, order=1, mode="constant").
+  // Rotate with canvas expansion and bilinear interpolation; corners are
+  // filled with the median.
   processing.rotate = function (img, angleDeg) {
     const angle = ((angleDeg % 360) + 360) % 360;
     if (angle === 0) return img;
@@ -98,7 +98,7 @@
 
   // Round a [y0, x0, y1, x1] box and clip it to the image; null if empty.
   processing.clipCrop = function (crop, w, h) {
-    let [y0, x0, y1, x1] = crop.map(num.round);
+    let [y0, x0, y1, x1] = crop.map(Math.round);
     if (y0 > y1) [y0, y1] = [y1, y0];
     if (x0 > x1) [x0, x1] = [x1, x0];
     y0 = Math.max(y0, 0);
