@@ -142,7 +142,10 @@ class Ui:
 
     def set(self, name, value, nth=0):
         """Type into a field and commit it, as leaving the field does."""
-        field = self.t(name, nth)
+        # the panel is rebuilt after a change; let that happen first, then work on one
+        # and the same field from start to end
+        self.flush()
+        field = self.t(name, nth).element_handle()
         # select what is there first: typing into a number field does not always replace it (WebKit on Linux)
         field.select_text()
         field.fill(str(value))
