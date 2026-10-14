@@ -130,3 +130,9 @@ This software was written entirely by Claude Code, Anthropic's AI coding
 assistant. It is provided as is, without any warranty. The repository owner
 takes no responsibility for its correctness or for any results obtained with
 it; check measurements independently before relying on them.
+
+## Licence
+
+Zero-Clause BSD (see `LICENSE`): use, copy, change and pass it on for any
+purpose, without having to name anyone. The two libraries in `js/vendor/`
+(UTIF.js and pako) keep their own MIT licences, which are next to them.
