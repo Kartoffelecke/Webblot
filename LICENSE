@@ -11,3 +11,15 @@ INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
 LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
 OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 PERFORMANCE OF THIS SOFTWARE.
+
+
+Third-party code
+================
+
+The two libraries in js/vendor/ are not covered by the licence above. They
+are used under their own MIT licences, whose full text is next to them:
+
+- UTIF.js (js/vendor/UTIF.js): Copyright (c) 2017 Photopea.
+  Licence: js/vendor/UTIF-LICENSE
+- pako (js/vendor/pako.min.js): Copyright (C) 2014-2017 by Vitaly Puzrin and
+  Andrei Tuputcyn. Licence: js/vendor/pako-LICENSE
