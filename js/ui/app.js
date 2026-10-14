@@ -2,7 +2,7 @@
 (function () {
   "use strict";
   const WB = (window.WB = window.WB || {});
-  const { dom, app, state, num, imageio, panels, quantify, figurepanel, project, library, feedback } = WB;
+  const { dom, app, state, num, imageio, panels, quantify, figurepanel, library, feedback } = WB;
 
   // The steps a blot goes through, in order: key, name, and what the step is for.
   const STEPS = [
@@ -48,7 +48,7 @@
       onchange: async () => { await addFiles([...files.files]); files.value = ""; },
     });
     const projectFile = dom.el("input", {
-      type: "file", accept: ".json,.zip", "data-t": "open-project", hidden: true,
+      type: "file", accept: ".zip", "data-t": "open-project", hidden: true,
       onchange: async () => {
         const file = projectFile.files[0];
         projectFile.value = "";
@@ -301,7 +301,6 @@
     "WB.model": "js/core/model.js",
     "WB.imageio": "js/core/imageio.js",
     "WB.zip": "js/core/zip.js",
-    "WB.store": "js/core/store.js",
     "WB.tree": "js/core/tree.js",
     "WB.processing": "js/core/processing.js",
     "WB.lanes": "js/core/lanes.js",
@@ -314,7 +313,6 @@
     "WB.panels": "js/ui/panels.js",
     "WB.quantify": "js/ui/quantify.js",
     "WB.figurepanel": "js/ui/figurepanel.js",
-    "WB.project": "js/ui/project.js",
     "WB.library": "js/ui/library.js",
   };
 

@@ -9,22 +9,22 @@
 (function () {
   "use strict";
   const WB = (window.WB = window.WB || {});
-  const { dom, app, state, model, tree, project, imageio, zip, processing, lanes, quant } = WB;
+  const { dom, app, state, model, tree, imageio, zip, processing, lanes, quant } = WB;
   const library = (WB.library = {});
 
   const VERSION = 1; // of blot.json, figure.json and folder.json
   const LAST = "web_blot.last"; // the folder to open again when the page is loaded
-  const MOVED = "web_blot.moved"; // the projects of the old storage were copied into the work folder
   const DELAY = 400; // ms without a change before the settings are written
   const DELAY_DERIVED = 1500; // and before the pictures and tables are
+
+  // The name the open folder goes by: its own, or that of its first blot.
+  const title = () => state.folder.name || (state.blots[0] ? state.blots[0].name : "") || "Untitled";
 
   const pretty = (value) => JSON.stringify(value, null, 1) + "\n";
 
   // Settings that must survive a reload right after they change (which folder
-  // was open, whether the old projects were moved in) are kept with the
-  // folders: localStorage is written to disk a moment later, so a reload just
-  // after a change could still see the old value. Earlier versions kept them in
-  // localStorage, which is read when there is nothing else.
+  // was open) are kept with the folders: localStorage is written to disk a
+  // moment later, so a reload just after a change could still see the old value.
   const known_settings = new Map();
   async function remember(name, value) {
     if (known_settings.get(name) === value) return;
@@ -37,23 +37,15 @@
     }
   }
   async function recall(name) {
-    let value = undefined;
+    let value = null;
     try {
-      if (tree.store.kind !== "none") value = await tree.setting(name);
+      if (tree.store.kind !== "none") value = (await tree.setting(name)) ?? null;
     } catch (error) {
-      value = undefined;
-    }
-    if (value === undefined || value === null) {
-      try {
-        value = localStorage.getItem(name);
-      } catch (error) {
-        value = null;
-      }
+      value = null;
     }
     known_settings.set(name, value);
     return value;
   }
-  let moved = null; // what was done with the old projects: null, "copied" or "removed"
   const bufferOf = (bytes) => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
 
   // ------------------------------------------------------------ the documents
@@ -436,7 +428,7 @@
     try {
       if (!state.folder.dir) {
         const names = new Set((await store.list([])).map((e) => e.name.toLowerCase()));
-        state.folder.dir = tree.freeName(state.folder.name || project.title(), names);
+        state.folder.dir = tree.freeName(state.folder.name || title(), names);
         if (!state.folder.name) state.folder.name = state.folder.dir;
         await store.mkdir([state.folder.dir]);
         wrote = true;
@@ -563,58 +555,16 @@
     return library.download(state.folder.dir);
   };
 
-  // Take what is open, which was read from a file of the old kind, into the
-  // work folder as a new folder.
-  async function adopt(name) {
-    detach();
-    state.folder.name = name || state.folder.name;
-    await library.saveNow();
-  }
-
-  // Open a file: a project file or library file of the old kind, or a zip of
-  // folders as "Download" makes them. Returns the names of the new folders.
+  // Open a zip of folders as "Download" makes them. Returns the names of the
+  // new folders.
   library.importFile = async function (file) {
     await library.saveNow();
-    const stem = file.name.replace(/(\.webblot)?\.(json|zip)$/i, "");
-    if (/\.json$/i.test(file.name)) {
-      let data;
-      try {
-        data = JSON.parse(await file.text());
-      } catch (error) {
-        throw new Error("This is not a web_blot project file.");
-      }
-      project.load(data);
-      await adopt(data.name || stem);
-      return [state.folder.dir];
-    }
+    const stem = file.name.replace(/\.zip$/i, "");
     const entries = zip.read(await file.arrayBuffer());
-    const decoder = new TextDecoder();
-    const old = entries.filter((e) => e.name.endsWith(project.SUFFIX));
-    if (old.length) {
-      // a library of the old kind: every project becomes a folder
-      const listEntry = entries.find((e) => e.name === "library.json");
-      const names = new Map();
-      if (listEntry) for (const info of JSON.parse(decoder.decode(listEntry.data)).projects || []) names.set(info.file, info.name);
-      const made = [];
-      const failed = [];
-      for (const entry of old) {
-        const own = entry.name.split("/").pop().slice(0, -project.SUFFIX.length);
-        try {
-          const data = JSON.parse(decoder.decode(entry.data));
-          project.load(data);
-          await adopt(names.get(entry.name) || data.name || own);
-          made.push(state.folder.dir);
-        } catch (error) {
-          failed.push(`${own}: ${error.message}`);
-        }
-      }
-      if (failed.length) WB.feedback.error(`Could not read:\n${failed.join("\n")}`);
-      return made;
-    }
     // folders as they are on disk; a zip of one folder's content gets a folder around it
     const paths = entries.map((e) => [e.name.split("/").filter(Boolean), e.data]).filter(([p]) => p.length && !p[0].startsWith("__MACOSX"));
     if (!paths.some(([p]) => p[p.length - 1] === "blot.json" || p[p.length - 1] === "figure.json"))
-      throw new Error("There are no web_blot folders or projects in this file.");
+      throw new Error("There are no web_blot folders in this file.");
     const bare = paths.some(([p]) => p.length === 2 && (p[1] === "blot.json" || p[1] === "figure.json"));
     const store = tree.store;
     const names = new Set((await store.list([])).map((e) => e.name.toLowerCase()));
@@ -632,49 +582,6 @@
     const made = [...target.values()];
     if (made.length) await library.open(made[0]);
     return made;
-  };
-
-  // ---------------------------------------- projects of the storage before
-
-  let oldProjects = [];
-
-  async function findOld() {
-    try {
-      moved = await recall(MOVED);
-      oldProjects = moved === "removed" ? [] : await WB.store.list();
-    } catch (error) {
-      oldProjects = [];
-    }
-  }
-
-  // Copy the projects of the old browser storage into the work folder.
-  library.moveOld = async function () {
-    await library.saveNow();
-    const failed = [];
-    let first = null;
-    for (const meta of oldProjects) {
-      try {
-        const stored = await WB.store.load(meta.id);
-        project.load({ ...stored.doc, images: stored.images }, imageio.fromBinary);
-        await adopt(meta.name);
-        first = first || state.folder.dir;
-      } catch (error) {
-        failed.push(`${meta.name}: ${error.message}`);
-      }
-    }
-    moved = "copied";
-    await remember(MOVED, moved);
-    if (failed.length) WB.feedback.error(`Could not move:\n${failed.join("\n")}`);
-    if (first) await library.open(first);
-    await scan();
-  };
-
-  library.removeOld = async function () {
-    for (const meta of oldProjects) await WB.store.remove(meta.id);
-    oldProjects = [];
-    moved = "removed";
-    await remember(MOVED, moved);
-    renderTree();
   };
 
   // --------------------------------------------------------- the tree panel
@@ -756,7 +663,7 @@
       : f));
     // the open folder is always there, also before it is written or listed
     if (!folders.some((f) => f.open) && (open || state.blots.length)) {
-      folders.push({ name: open || project.title(), blots: state.blots.map((b) => b.name), figures: state.figures.map((f) => f.name), open: true, unsaved: !open });
+      folders.push({ name: open || title(), blots: state.blots.map((b) => b.name), figures: state.figures.map((f) => f.name), open: true, unsaved: !open });
       folders.sort((x, y) => x.name.localeCompare(y.name));
     }
     const row = (folder) => dom.el("li", { class: `tree-folder${folder.open ? " open" : ""}`, "data-t": "tree-folder", "data-name": folder.name },
@@ -787,7 +694,7 @@
           }),
         }, WB.icon("chart"), dom.el("span", {}, name))))));
     const fileInput = dom.el("input", {
-      type: "file", accept: ".json,.zip", "data-t": "tree-import-file", hidden: true,
+      type: "file", accept: ".zip", "data-t": "tree-import-file", hidden: true,
       onchange: act(async () => {
         const file = fileInput.files[0];
         fileInput.value = "";
@@ -798,19 +705,11 @@
       dom.el("div", { class: "tree-head" }, dom.el("h2", {}, "Folders"),
         dom.icon("plus", "tree-new", act(() => library.newFolder()), "New folder", "small")),
       storageLine(),
-      oldProjects.length && moved !== "copied" ? dom.el("div", { class: "notice", "data-t": "tree-old" },
-        `${oldProjects.length} project${oldProjects.length === 1 ? "" : "s"} from before ${oldProjects.length === 1 ? "is" : "are"} still stored the old way. `,
-        dom.primary("Move in", "tree-move-old", act(library.moveOld), "Write them into the work folder as folders. The old copies stay until you remove them.")) : null,
-      oldProjects.length && moved === "copied" ? dom.el("p", { class: "hint", "data-t": "tree-old-copied" },
-        "The projects from before are folders now. ",
-        dom.button("Remove the old copies", "tree-remove-old", act(async () => {
-          if (await WB.feedback.confirm(`Remove the ${oldProjects.length} old copies from the browser's storage? The folders stay.`, "Remove old copies", { danger: true })) await library.removeOld();
-        }))) : null,
       folders.length ? dom.el("ul", { class: "tree-list", "data-t": "tree-list" }, folders.map(row))
         : dom.el("p", { class: "hint" }, "No folder yet. A folder is made as soon as you add a blot."),
       dom.el("div", { class: "tree-foot" },
         dom.button([WB.icon("upload"), "Open file…"], "tree-import", () => fileInput.click(),
-          "Add folders from a zip file, or a project or library file of an earlier version."),
+          "Add folders from a zip file made by Download."),
         dom.button([WB.icon("download"), "All"], "tree-download-all", act(() => library.download()), "Download all folders as one zip file."),
         fileInput),
     ].filter(Boolean));
@@ -848,7 +747,7 @@
 
   app.views.push((kinds) => {
     if (document.activeElement !== nameField) nameField.value = state.folder.name;
-    nameField.placeholder = project.title();
+    nameField.placeholder = title();
     schedule();
     if (["blots", "select", "panel"].some((k) => kinds.has(k))) renderTree();
   });
@@ -856,7 +755,6 @@
   // Find out where the work folder is, and open the folder that was open last.
   library.start = async function () {
     await tree.start();
-    await findOld();
     if (tree.store.kind === "none") {
       setStatus("failed", "Not stored", "This browser does not let the page store anything (a private window, or storage is blocked).");
       renderTree();

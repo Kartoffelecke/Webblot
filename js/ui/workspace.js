@@ -632,7 +632,7 @@
       dom.el("div", { class: "choices" },
         dom.primary([WB.icon("image"), "Add blot images…"], "welcome-add", press("add-files"), "16-bit TIFF, PNG or JPEG; several at once."),
         dom.button("Try the sample blot", "welcome-sample", () => app.addSample(), "A made-up blot with eight lanes, to see how it works."),
-        dom.button([WB.icon("folder"), "Open a project file…"], "welcome-open", press("open-project"))),
+        dom.button([WB.icon("folder"), "Open a downloaded folder…"], "welcome-open", press("open-project"), "A zip file made by Download folder.")),
       dom.el("p", { class: "steps-preview" }, "Then: prepare the image, mark the lanes, measure the bands, build the figure."));
   }
 

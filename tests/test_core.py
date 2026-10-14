@@ -121,15 +121,6 @@ def test_rgb_tiff_is_averaged(app, tmp_path):
     assert np.allclose(np.array(got).reshape(20, 30), rgb.astype(np.float32).mean(axis=-1), atol=1e-4)
 
 
-def test_project_image_packing_roundtrip(app, blot):
-    img = blot["img"]
-    back = call(app, "(img) => { const p = WB.imageio.pack(img); return [p.dtype, Array.from(WB.imageio.unpack(p).data)]; }", img)
-    assert back[0] == "uint16" and np.array_equal(np.array(back[1], dtype=np.float32), img.ravel())
-    frac = img[:20, :20] + 0.25
-    back = call(app, "(img) => { const p = WB.imageio.pack(img); return [p.dtype, Array.from(WB.imageio.unpack(p).data)]; }", frac)
-    assert back[0] == "float32" and np.array_equal(np.array(back[1], dtype=np.float32), frac.ravel())
-
-
 def scipy_rotate(image, angle_deg):
     """Rotation with the canvas enlarged and the corners filled with the median."""
     angle = float(angle_deg) % 360.0

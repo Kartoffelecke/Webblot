@@ -751,11 +751,11 @@ def test_drawn_shapes_are_visible_adjustable_and_applied_on_request(ui, blot_fil
     ui.flush()
     assert ui.state("b.pending.crop") is None and ui.state("b.session.transform.crop") == applied
 
-    # the shapes are not part of a saved project
+    # the shapes are not saved
     ui.click("tool-crop")
     ui.flush()
     ui.drag_on_card(0, (20, 20), (100, 200))
-    assert "pending" not in ui.state("JSON.stringify(WB.project.serialize())")
+    assert "pending" not in json.dumps(ui.blot_json())
 
 
 def canvas_pixel(ui, y, x, card=0):
@@ -843,13 +843,12 @@ def test_brightfield_overlay_with_its_own_exposure(ui, blot_files, blot, tmp_pat
     # rotation and crop apply to both images
     ui.set("angle", 90)
     assert ui.state("[b.work.bf.w, b.work.bf.h]") == ui.state("[b.work.wb.w, b.work.wb.h]") == [420, 640]
-    # the exposure is part of a saved project
+    # the exposure is saved
     ui.set("bf-gamma", 1.5)
-    saved = ui.state("JSON.stringify(WB.project.serialize())")
+    saved = ui.document()
     assert '"bf_gamma":1.5' in saved
-    ui.state("WB.project.load(JSON.parse(JSON.stringify(WB.project.serialize())))")
-    ui.flush()
-    assert ui.state("JSON.stringify(WB.project.serialize())") == saved
+    ui.reopen()
+    assert ui.document() == saved
     ui.tab("prepare")
     ui.click("bf-remove")
     assert "brightfield" in ui.confirm()
@@ -917,11 +916,10 @@ def test_blots_are_reordered_and_merged_by_dragging(ui, blot_files, blot, tmp_pa
     ui.flush()
     assert lit > 100 + canvas_pixel(ui, *ladder)
 
-    # a merged pair survives saving and opening a project
-    saved = ui.state("JSON.stringify(WB.project.serialize())")
-    ui.state("WB.project.load(JSON.parse(JSON.stringify(WB.project.serialize())))")
-    ui.flush()
-    assert ui.state("JSON.stringify(WB.project.serialize())") == saved
+    # a merged pair survives saving and opening the folder
+    saved = ui.document()
+    ui.reopen()
+    assert ui.document() == saved
     ui.select_blot(0)
     ui.tab("prepare")
 
@@ -950,15 +948,6 @@ def test_blots_are_reordered_and_merged_by_dragging(ui, blot_files, blot, tmp_pa
     drag(0, 0, "image")
     drag(0, 0, "after")
     assert names() == ["marker", "target"]
-
-
-def test_project_files_of_another_version_are_refused(ui):
-    ui.click("add-sample")
-    ui.flush()
-    other = ui.state("(() => { const d = WB.project.serialize(); d.version += 1; return JSON.stringify(d); })()")
-    message = ui.page.evaluate("(text) => { try { WB.project.load(JSON.parse(text)); return null; } catch (e) { return e.message; } }", other)
-    assert "another version" in message
-    assert ui.state("s.blots.length") == 1  # what was open is untouched
 
 
 def test_what_a_tab_shows_is_in_view_without_scrolling(ui):
@@ -1087,10 +1076,9 @@ def test_brightfield_can_be_part_of_the_figure(ui, blot_files, blot, tmp_path):
     page.wait_for_function("WB.app.blot().work.bf !== null")
     ui.flush()
     assert ui.state("s.blots.map((b) => b.session.figure.show_bf)") == [True, False]
-    saved = ui.state("JSON.stringify(WB.project.serialize())")
-    ui.state("WB.project.load(JSON.parse(JSON.stringify(WB.project.serialize())))")
-    ui.flush()
-    assert ui.state("JSON.stringify(WB.project.serialize())") == saved
+    saved = ui.document()
+    ui.reopen()
+    assert ui.document() == saved
     assert ui.state("s.blots.map((b) => b.session.figure.show_bf)") == [True, False]
 
 
@@ -1143,12 +1131,11 @@ def test_collapse_identical_merges_neighbouring_labels(figured):
     ui.t("label-collapse").check()
     ui.flush()
 
-    # saved with the project
-    saved = ui.state("JSON.stringify(WB.project.serialize())")
+    # saved with the folder
+    saved = ui.document()
     assert '"collapse":true' in saved
-    ui.state("WB.project.load(JSON.parse(JSON.stringify(WB.project.serialize())))")
-    ui.flush()
-    assert ui.state("JSON.stringify(WB.project.serialize())") == saved
+    ui.reopen()
+    assert ui.document() == saved
 
 
 def test_zoom_and_pan_inside_a_blot(ui, blot_files):
@@ -1210,7 +1197,7 @@ def test_zoom_and_pan_inside_a_blot(ui, blot_files):
     ui.flush()
     assert ui.state("[b.work.wb.w, b.view.zoom]") == [220, 1]
     # zooming is not something a blot is measured or saved with
-    assert "view" not in json.dumps(ui.page.evaluate("WB.project.serialize().blots.map((b) => Object.keys(b))"))
+    assert "view" not in ui.blot_json()
 
 
 def test_new_blot_from_a_crop_area(ui, blot_files):
@@ -1267,10 +1254,8 @@ def test_new_blot_from_a_crop_area(ui, blot_files):
     ui.state("(s.blots[1].session.lanes.length = 2, 0)")
     assert ui.state("[s.blots[0].session.lanes.length, s.blots[2].session.lanes.length]") == [8, 8]
 
-    # and they come back from a saved project
-    saved = ui.page.evaluate("JSON.stringify(WB.project.serialize())")
-    ui.page.evaluate("(text) => WB.project.load(JSON.parse(text))", saved)
-    ui.flush()
+    # and they come back from the saved folder
+    ui.reopen()
     assert ui.state("s.blots.map((b) => [b.name, b.work.wb.h])") == [["target", 420], ["target 2", 420], ["target 3", pytest.approx(100, abs=4)], ["control", 420]]
 
 
@@ -1302,14 +1287,12 @@ def test_normalize_across_samples(quantified):
     assert ui.page.locator("[data-t=results] tr").nth(7).locator("td").all_inner_texts()[2] == ""
     assert ui.page.evaluate("WB.quant.normalizeRows([[2, 0, null], [4, -1, null], [null, 0, null]])") == [[0.5, None, None], [1, None, None], [None, None, None]]
 
-    # the option is saved with the project
-    saved = ui.page.evaluate("JSON.stringify(WB.project.serialize())")
+    # the option is saved with the folder
+    ui.reopen()
+    assert ui.state("s.normalize") is True
     ui.t("normalize").uncheck()
     ui.flush()
     assert float(ui.page.locator("[data-t=results] tr").nth(1).locator("td").first.inner_text()) == pytest.approx(raw[0][0], rel=1e-4)
-    ui.page.evaluate("(text) => WB.project.load(JSON.parse(text))", saved)
-    ui.flush()
-    assert ui.state("s.normalize") is True
 
 
 def test_copy_is_numbers_only_unless_headers_are_asked_for(quantified):
@@ -1354,7 +1337,7 @@ def test_each_gel_is_grouped_with_its_border_in_the_svg(ui, blot_files):
     assert png_size(open(png.path(), "rb").read())[0] > 100
 
 
-def test_line_width_is_in_mm_and_older_projects_keep_their_lines(ui):
+def test_line_width_is_in_mm(ui):
     ui.click("add-sample")
     ui.tab("figure")
     assert ui.state("s.style.line_width_mm") == 0.2 and ui.t("line-width").input_value() == "0.2"
@@ -1362,26 +1345,6 @@ def test_line_width_is_in_mm_and_older_projects_keep_their_lines(ui):
     assert set(ui.state(strokes)) == {"0.567"}
     ui.set("line-width", 0.5)
     assert set(ui.state(strokes)) == {"1.417"}
-
-    # a version 5 project had the width in points: it keeps exactly that width
-    ui.page.evaluate(
-        """() => { const d = WB.project.serialize(); d.version = 5; d.style.line_width = 0.5; delete d.style.line_width_mm; delete d.style.decrowd;
-            window.v5 = JSON.stringify(d); WB.project.load(JSON.parse(window.v5)); }"""
-    )
-    ui.flush()
-    assert ui.state("[s.style.line_width_mm, 'line_width' in s.style, s.style.decrowd]") == [pytest.approx(0.5 * 25.4 / 72), False, False]
-    assert set(ui.state(strokes)) == {"0.5"}
-    assert float(ui.t("line-width").input_value()) == pytest.approx(0.176)
-    assert ui.state("WB.project.serialize().version === WB.model.PROJECT_VERSION")
-
-    # the same for a version 5 project in a library file of the old kind: it becomes a folder
-    made = ui.page.evaluate(
-        """async () => { const blob = WB.zip.write([{ name: "projects/five.webblot.json", data: window.v5 }]);
-            return WB.library.importFile(new File([blob], "lib.webblot.zip")); }"""
-    )
-    ui.flush()
-    assert made == ["five"] and ui.state("[s.folder.dir, s.blots.length, s.style.line_width_mm]") == ["five", 1, pytest.approx(0.5 * 25.4 / 72)]
-    assert json.loads(ui.read("five/Figure/figure.json"))["style"]["line_width_mm"] == pytest.approx(0.5 * 25.4 / 72)
 
 
 def test_decrowd_moves_overlapping_side_labels_outwards(ui):
@@ -1659,22 +1622,9 @@ def test_figure_area_is_switched_on_and_off(ui, blot_files):
     ui.flush()
     assert not ui.t("panel-crop-all").is_checked() and not ui.t("figure-crop").is_checked()
 
-    # saved with the project, the area that is off included
-    saved = ui.state("JSON.stringify(WB.project.serialize())")
-    ui.page.evaluate("(text) => WB.project.load(JSON.parse(text))", saved)
-    ui.flush()
+    # saved with the folder, the area that is off included
+    ui.reopen()
     assert ui.state("s.blots.map((b) => [b.session.figure.crop_on, b.session.figure.crop[0]])") == [[False, 99.5], [True, 41.5]]
-
-    # a version 6 project had no switch: an area that was set is in use, as it was
-    ui.page.evaluate(
-        """(text) => { const d = JSON.parse(text); d.version = 6;
-            d.blots.forEach((b) => delete b.session.figure.crop_on); d.blots[1].session.figure.crop = null;
-            WB.project.load(d); }""",
-        saved,
-    )
-    ui.flush()
-    assert ui.state("s.blots.map((b) => [b.session.figure.crop_on, b.session.figure.crop && b.session.figure.crop[0]])") == [[True, 99.5], [False, None]]
-    assert ui.state(height) == [100, 420] and ui.state("WB.project.serialize().version === WB.model.PROJECT_VERSION")
 
 
 def test_valley_to_valley_background_in_the_quantify_tab(quantified):
@@ -1722,10 +1672,8 @@ def test_valley_to_valley_background_in_the_quantify_tab(quantified):
     ui.flush()
     assert ui.state("b.session.lanes[2].peaks.length") == 3 and ui.state("WB.app.results(b).rows[2][1]") == pytest.approx(valley[2][1], rel=0.02)
 
-    # saved with the project
-    saved = ui.state("JSON.stringify(WB.project.serialize())")
-    ui.page.evaluate("(text) => WB.project.load(JSON.parse(text))", saved)
-    ui.flush()
+    # saved with the folder
+    ui.reopen()
     assert ui.state("b.session.lanes[0].baseline.method") == "valley" and ui.state("WB.app.results(b).rows[0][0]") == pytest.approx(before, rel=1e-9)
 
 

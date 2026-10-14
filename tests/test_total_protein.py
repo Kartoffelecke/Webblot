@@ -100,11 +100,6 @@ def test_a_flat_background_from_an_empty_area_for_every_lane(quantified, blot_fi
     ui.click("bg-area-remove")
     assert ui.state("b.bgArea") is None and lines(ui)[0][:2] == ["linear", False]
     assert ui.state("b.session.lanes[0].baseline.linear_ends[0]") == pytest.approx(before, rel=1e-9)
-    # a project file of before has no such area, and opens as it did
-    old = ui.page.evaluate("(() => { const d = WB.project.serialize(); d.blots.forEach((b) => delete b.bg_area); return d; })()")
-    ui.page.evaluate("(d) => WB.project.load(d)", old)
-    ui.flush()
-    assert ui.state("b.bgArea") is None
 
 
 def test_one_region_in_every_lane(quantified):

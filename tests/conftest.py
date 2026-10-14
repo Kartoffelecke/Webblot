@@ -241,11 +241,23 @@ class Ui:
 
     def document(self):
         """What is open, as text that is the same after it was written and read again: its
-        settings, without the name of the folder and the names the images go by."""
+        settings, without the name of the folder and the images."""
         return self.page.evaluate(
-            """(() => { const d = WB.project.serialize(); delete d.images; d.name = "";
-                return JSON.stringify(d).replace(/"(wb|bf)":"[0-9a-f]+"/g, '"$1":"x"'); })()"""
+            """(() => { const s = WB.state;
+                const origin = (o) => o && { ...o, bf: o.bf ? "x" : null, bfOrigin: origin(o.bfOrigin) };
+                return JSON.stringify({ style: s.style, normalize: s.normalize, blots: s.blots.map((b) => ({
+                    name: b.name, include: b.include, labels: b.labels, roi: b.roi, bg_area: b.bgArea, session: b.session,
+                    bf: b.raw.bf ? "x" : null, bf_origin: origin(b.bfOrigin) })) }); })()"""
         )
+
+    def reopen(self):
+        """Write the open folder and read it again from the work folder."""
+        self.page.evaluate("WB.library.saveNow().then(() => WB.library.open(WB.state.folder.dir))")
+        self.flush()
+
+    def blot_json(self):
+        """The blot.json of the selected blot, as it is written."""
+        return json.loads(self.page.evaluate("WB.library.saveNow().then(() => WB.tree.readText([WB.state.folder.dir, WB.app.blot().disk.dir, 'blot.json']))"))
 
     def saved(self):
         """Wait until everything is written, pictures and tables included."""
