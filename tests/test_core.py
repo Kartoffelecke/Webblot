@@ -264,6 +264,64 @@ def test_valley_to_valley_background(app):
     assert [p["apex"] for p in found] == [80]
 
 
+def test_tilted_borders_follow_a_crooked_band(app):
+    # a band that runs crooked: in a lane 20 px wide it is 0.6 px lower for
+    # every px to the right, so 5.7 px higher at the lane's left edge and lower
+    # at its right edge
+    w, h, amp, sigma, slope = 60, 200, 1000.0, 3.0, 0.6
+    yy, xx = np.mgrid[0:h, 0:w].astype(float)
+    image = 100 + amp * np.exp(-0.5 * ((yy - (100 + slope * (xx - 30))) / sigma) ** 2)
+    the_lane = lane(30, 20, 180, 20, baseline=make_baseline("linear", linear_ends=[100, 100]))
+    got = app.evaluate(
+        """([data, w, h, lane]) => {
+            const img = { w, h, data: Float64Array.from(data) };
+            const strip = WB.lanes.extractStrip(img, lane);
+            const profile = WB.lanes.extractProfile(img, lane);
+            return { n: strip.n, m: strip.m, data: Array.from(strip.data), across: Array.from(strip.across), profile: Array.from(profile) };
+        }""",
+        [image.ravel().tolist(), w, h, the_lane],
+    )
+    n, m = got["n"], got["m"]
+    rows = np.array(got["data"]).reshape(m, n)
+    # the profile is the mean of the lines across the lane
+    assert (n, m) == (160, 20) and np.allclose(got["profile"], rows.mean(axis=0), rtol=1e-12)
+    assert got["across"] == pytest.approx(np.arange(m) + 0.5 - m / 2)
+
+    centre = 100 - 20.5  # the band crosses the centre line here (position i is image row 20.5 + i)
+    tilt = float(np.degrees(np.arctan(slope)))
+    straight = peak(centre - 9, centre + 9, round(centre))
+    tilted = {**straight, "start_tilt_deg": tilt, "end_tilt_deg": tilt}
+    area = lambda p, method="linear": app.evaluate(
+        """([data, w, h, lane, peak]) => {
+            const img = { w, h, data: Float64Array.from(data) };
+            const strip = WB.lanes.extractStrip(img, lane);
+            const profile = WB.lanes.stripProfile(strip);
+            const baseline = WB.quant.computeBaseline(profile, lane.baseline, [peak]);
+            return [WB.quant.peakArea(profile, baseline, peak, { strip, valley: lane.baseline.method === "valley" }),
+                    WB.quant.peakArea(profile, baseline, peak)];
+        }""",
+        [image.ravel().tolist(), w, h, {**the_lane, "baseline": make_baseline(method, linear_ends=[100, 100])}, p],
+    )
+    amount = amp * sigma * np.sqrt(2 * np.pi)
+    [with_strip, without] = area(straight)
+    # straight borders: the same number with or without the lines; the slanted band sticks out at the edges
+    assert with_strip == without and with_strip < 0.97 * amount
+    [along, _] = area(tilted)
+    # borders tilted along the band hold all of it
+    assert along == pytest.approx(amount, rel=0.01)
+    # line by line, as written out: each line between its own borders, above the background, then the mean
+    expected = 0
+    for j, a in enumerate(got["across"]):
+        lo = int(np.clip(round(straight["start"] + a * slope), 0, n - 1))
+        hi = int(np.clip(round(straight["end"] + a * slope), 0, n - 1))
+        expected += np.trapezoid(rows[j, lo:hi + 1] - 100)
+    assert along == pytest.approx(expected / m, rel=1e-9)
+    # valley to valley: each line has the line between its own values at its borders, so
+    # it loses only the band's tails there (at 3 sigma: 1.1 % of its height, over 18 px)
+    [valley, _] = area(tilted, "valley")
+    assert valley == pytest.approx(along - 18 * amp * np.exp(-4.5), rel=0.01)
+
+
 def test_images_are_kept_as_16_bit_tiff(app, blot, tmp_path):
     """Whatever an image was read from, it is written as one kind of file that other programs read."""
     encode = "(img) => { const bytes = WB.imageio.encodeTiff(img); let s = ''; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)); return btoa(s); }"

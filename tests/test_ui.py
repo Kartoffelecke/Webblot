@@ -977,7 +977,7 @@ def test_what_a_tab_shows_is_in_view_without_scrolling(ui):
     first = page.locator("svg.plot").first
     assert page.locator("svg.plot").count() == ui.state("b.session.lanes.length") > 0
     box = ui.rect(first)
-    assert 0 < box["y"] and box["y"] + box["height"] <= 640
+    assert 0 < box["y"] and box["y"] + 124 <= 640  # its profile at least; the lane strip below it may need a scroll
     notice = page.locator("[data-t=no-peaks]")
     assert notice.is_visible() and ui.rect(notice)["y"] < 640
     notice.locator("button").click()
@@ -1707,6 +1707,68 @@ def test_valley_to_valley_background_in_the_quantify_tab(quantified):
     assert ui.state(f"b.session.lanes[{lane}].baseline.anchors.map((a) => a[0])") == expected_x
     # with the same lines under the peaks, the areas stay (unless the profile dips below a line)
     assert ui.state(f"WB.app.results(b).rows[{lane}]") == pytest.approx(rows_before[lane], rel=0.01)
+
+
+def test_lane_strip_moves_and_tilts_peak_borders(quantified):
+    ui = quantified
+    page = ui.page
+    # under every plot the lane itself, with the borders of its peaks
+    assert page.locator("[data-t=lane-strip]").count() == page.locator("svg.plot").count() == 8
+    assert page.locator("svg.plot").nth(0).locator("[data-t=strip-border]").count() == 2 * 3
+    ui.state("WB.app.select(b.id, 0)")
+    ui.flush()
+    per_px = ui.on_plot(0, 101)[0] - ui.on_plot(0, 100)[0]  # screen px per profile position
+
+    def centre(locator):
+        r = ui.rect(locator)
+        return (r["x"] + r["width"] / 2, r["y"] + r["height"] / 2)
+
+    strip = page.locator("svg.plot").nth(0)
+    border = lambda side: strip.locator(f"[data-t=strip-border][data-index='0'][data-side={side}]")
+    handle = lambda side, end: strip.locator(f"[data-t=strip-tilt][data-index='0'][data-side={side}][data-end={end}]")
+
+    # dragged, a border moves along the lane and stays straight
+    start = ui.state("b.session.lanes[0].peaks[0].start")
+    x, y = centre(border("start"))
+    ui.drag((x, y), (x - 3 * per_px, y))
+    ui.flush()
+    assert ui.state("b.session.lanes[0].peaks[0].start") == pytest.approx(start - 3, abs=0.6)
+    assert "start_tilt_deg" not in ui.state("b.session.lanes[0].peaks[0]")
+
+    # dragged by an end, it tilts about where it crosses the centre line
+    straight = ui.state("WB.app.results(b).rows[0][0]")
+    end = ui.state("b.session.lanes[0].peaks[0].end")
+    half = ui.state("WB.app.curves(b, b.session.lanes[0]).strip.m") / 2
+    x, y = centre(handle("end", "bottom"))
+    ui.drag((x, y), (x + 4 * per_px, y))
+    ui.flush()
+    tilt = ui.state("b.session.lanes[0].peaks[0].end_tilt_deg")
+    assert tilt == pytest.approx(np.degrees(np.arctan(4 / half)), abs=1.5)
+    assert ui.state("b.session.lanes[0].peaks[0].end") == end
+    tilted = ui.state("WB.app.results(b).rows[0][0]")
+    assert tilted != pytest.approx(straight, rel=1e-6)
+    assert float(ui.t("peak-area").inner_text()) == pytest.approx(tilted, rel=1e-4)
+    # in the plot the tilted border shows the positions it covers; on the blot it is slanted
+    assert strip.locator("[data-t=peak-border-span]").count() == 1
+    mark = page.locator("[data-t=card] [data-t=peak-mark]").nth(1)  # lane 1, peak 1, end
+    assert float(mark.get_attribute("y1")) != pytest.approx(float(mark.get_attribute("y2")), abs=0.5)
+
+    # a double-click on the end makes it straight again
+    centre_now = centre(handle("end", "bottom"))
+    page.mouse.dblclick(*centre_now)
+    ui.flush()
+    assert "end_tilt_deg" not in ui.state("b.session.lanes[0].peaks[0]")
+    assert ui.state("WB.app.results(b).rows[0][0]") == pytest.approx(straight, rel=1e-12)
+    assert ui.state("b.session.lanes[0].peaks.length") == 3  # and no peak was added
+
+    # "To all" takes the tilt along; it is saved with the folder
+    ui.state("(b.session.lanes[0].peaks[0].end_tilt_deg = 12, WB.app.changed('quant'))")
+    ui.flush()
+    ui.t("peak-to-all").click()
+    ui.flush()
+    assert ui.state("b.session.lanes.map((l) => l.peaks.find((p) => p.band_id === 1).end_tilt_deg)") == [12] * 8
+    ui.reopen()
+    assert ui.state("b.session.lanes[3].peaks.find((p) => p.band_id === 1).end_tilt_deg") == 12
 
 
 def expected_level(box, image):

@@ -376,7 +376,12 @@
       let apex = Math.round(a);
       for (let i = Math.ceil(a); i <= Math.floor(b); i++) if (profile[i] - baseline[i] > profile[apex] - baseline[apex]) apex = i;
       other.peaks = other.peaks.filter((p) => p.band_id !== peak.band_id && (Math.max(p.start, p.end) < a || Math.min(p.start, p.end) > b));
-      other.peaks.push({ start: a, end: b, apex, band_id: peak.band_id, quantify: true });
+      const copy = { start: a, end: b, apex, band_id: peak.band_id, quantify: true };
+      // tilted borders keep their slant (borders swapped in order keep theirs)
+      const [first, last] = peak.start <= peak.end ? ["start", "end"] : ["end", "start"];
+      if (peak[`${first}_tilt_deg`]) copy.start_tilt_deg = peak[`${first}_tilt_deg`];
+      if (peak[`${last}_tilt_deg`]) copy.end_tilt_deg = peak[`${last}_tilt_deg`];
+      other.peaks.push(copy);
       other.peaks.sort((p, q) => p.apex - q.apex);
     }
     app.changed("quant", "panel");
@@ -507,15 +512,24 @@
     return blot.cache.signal;
   };
 
-  // { profile, baseline } of a lane; profiles are kept until the lane or image changes
+  // { profile, baseline, strip } of a lane, the strip being the lane line by
+  // line (lanes.extractStrip); kept until the lane or image changes
   app.curves = function (blot, lane) {
     const key = [lane.x_center, lane.y0, lane.y1, lane.width, lane.tilt_deg].join(",");
-    let profile = blot.cache.profiles.get(key);
-    if (!profile) {
-      profile = lanes.extractProfile(app.signal(blot), lane);
-      blot.cache.profiles.set(key, profile);
+    let cached = blot.cache.profiles.get(key);
+    if (!cached) {
+      const strip = lanes.extractStrip(app.signal(blot), lane);
+      cached = { strip, profile: lanes.stripProfile(strip) };
+      blot.cache.profiles.set(key, cached);
     }
-    return { profile, baseline: quant.computeBaseline(profile, lane.baseline, lane.peaks) };
+    const { profile, strip } = cached;
+    return { profile, strip, baseline: quant.computeBaseline(profile, lane.baseline, lane.peaks) };
+  };
+
+  // The area of one peak of a lane, tilted borders included.
+  app.peakArea = function (blot, lane, peak, curves = app.curves(blot, lane)) {
+    return quant.peakArea(curves.profile, curves.baseline, peak,
+      { strip: curves.strip, valley: lane.baseline.method === "valley" });
   };
 
   app.results = function (blot) {
@@ -523,7 +537,8 @@
     return quant.resultsTable(
       blot.session.lanes,
       curves.map((c) => c.profile),
-      curves.map((c) => c.baseline)
+      curves.map((c) => c.baseline),
+      curves.map((c) => c.strip)
     );
   };
 

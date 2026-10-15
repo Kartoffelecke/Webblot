@@ -193,14 +193,50 @@
     return [a, b];
   };
 
+  // A border may be tilted against the line straight across the lane
+  // (`start_tilt_deg`, `end_tilt_deg`; missing is 0). `peak.start` and
+  // `peak.end` are where the borders cross the lane's centre line; `across`
+  // px off it, a border is this far along the lane.
+  quant.borderAt = (peak, side, across) =>
+    peak[side] + across * Math.tan(((peak[`${side}_tilt_deg`] || 0) * Math.PI) / 180);
+
+  quant.isTilted = (peak) => !!(peak.start_tilt_deg || peak.end_tilt_deg);
+
   // Baseline-subtracted area between the peak borders (trapezoid rule).
-  quant.peakArea = function (profile, baseline, peak) {
-    const [a, b] = quant.peakBounds(peak, profile.length);
-    if (b <= a) return 0;
-    let area = 0;
-    for (let i = a; i < b; i++)
-      area += 0.5 * (profile[i] - baseline[i] + profile[i + 1] - baseline[i + 1]);
-    return area;
+  //
+  // With a tilted border the region is not the same at every point across the
+  // lane, so the lane is taken line by line (`strip`, from lanes.extractStrip):
+  // each line is summed between its own borders, above the background, and the
+  // area is the mean of the lines, in the units of the profile, which is
+  // their mean. With straight borders that is the sum on the profile. The
+  // background curve is the same for every line, except for valley to valley
+  // (`valley`), where each line has the straight line between its own values
+  // at its two borders (the profile there still holds the slanted band of the
+  // other lines).
+  quant.peakArea = function (profile, baseline, peak, { strip = null, valley = false } = {}) {
+    const n = profile.length;
+    if (!strip || !quant.isTilted(peak) || strip.n !== n) {
+      const [a, b] = quant.peakBounds(peak, n);
+      if (b <= a) return 0;
+      let area = 0;
+      for (let i = a; i < b; i++)
+        area += 0.5 * (profile[i] - baseline[i] + profile[i + 1] - baseline[i + 1]);
+      return area;
+    }
+    let total = 0;
+    for (let j = 0; j < strip.m; j++) {
+      const [a, b] = quant.peakBounds({
+        start: quant.borderAt(peak, "start", strip.across[j]),
+        end: quant.borderAt(peak, "end", strip.across[j]),
+      }, n);
+      if (b <= a) continue;
+      const row = strip.data.subarray(j * n, (j + 1) * n);
+      const bg = valley
+        ? (i) => Math.min(row[i], row[a] + ((row[b] - row[a]) * (i - a)) / (b - a))
+        : (i) => baseline[i];
+      for (let i = a; i < b; i++) total += 0.5 * (row[i] - bg(i) + row[i + 1] - bg(i + 1));
+    }
+    return total / strip.m;
   };
 
   // Number the peaks of a lane 1, 2, 3, ... from the top of the lane.
@@ -216,7 +252,8 @@
   };
 
   // { bands, rows }: one row per lane with the area of each quantified band.
-  quant.resultsTable = function (laneList, profiles, baselines) {
+  // `strips` (optional) are the lanes line by line, for tilted borders.
+  quant.resultsTable = function (laneList, profiles, baselines, strips = []) {
     const bands = [
       ...new Set(laneList.flatMap((l) => l.peaks.filter((p) => p.quantify).map((p) => p.band_id))),
     ].sort((a, b) => a - b);
@@ -225,7 +262,8 @@
       for (const p of lane.peaks) {
         if (!p.quantify) continue;
         const j = bands.indexOf(p.band_id);
-        row[j] = (row[j] || 0) + quant.peakArea(profiles[i], baselines[i], p);
+        row[j] = (row[j] || 0) + quant.peakArea(profiles[i], baselines[i], p,
+          { strip: strips[i] || null, valley: !!lane.baseline && lane.baseline.method === "valley" });
       }
       return row;
     });

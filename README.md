@@ -41,10 +41,13 @@ button.
    a drawn gel area), then move, resize and tilt them on the blot.
 3. **Quantify**: one profile per lane: the mean intensity across the lane
    width at each pixel along it. Peaks are detected or added by double-click;
-   a peak ends where its flank has flattened. Drag borders to adjust. Areas are
-   the sum of profile minus background between the borders, shown per lane and
-   peak number, optionally normalised to the largest lane, and downloadable as
-   CSV.
+   a peak ends where its flank has flattened. Drag borders to adjust. Under
+   each plot the lane itself is shown on its side, with the peak borders: drag
+   a border there to move it, or one of its ends to tilt it along a band that
+   runs crooked. Areas are the sum of profile minus background between the
+   borders (with a tilted border, taken line by line across the lane), shown
+   per lane and peak number, optionally normalised to the largest lane, and
+   downloadable as CSV.
 4. **Figure**: the blots stacked as panels, each with its own area of the
    image, lane labels (pasted from a spreadsheet if you like), MW and band
    markers. A folder can have several figures. Export as SVG (the gel's own

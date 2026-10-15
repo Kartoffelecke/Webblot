@@ -138,6 +138,17 @@ svg.plot.current .plot-title { fill: var(--accent); }
 .peak-border.unused { stroke: var(--text-3); }
 .peak-number { fill: var(--accent); font-size: 11px; font-weight: 700; pointer-events: none; }
 .anchor { fill: var(--surface); stroke: var(--plot-baseline); stroke-width: 2; cursor: grab; }
+.peak-border-span { fill: var(--accent); fill-opacity: 0.12; pointer-events: none; }
+.peak-border-span.unused { fill: var(--text-3); }
+/* the lane strip under a plot */
+.strip-bg { fill: var(--surface-2); }
+.strip-region { fill: var(--accent); fill-opacity: 0.18; }
+.strip-region.unused { fill: var(--text-3); }
+.strip-border { stroke: var(--accent); stroke-width: 1.6; pointer-events: none; }
+.strip-border.unused { stroke: var(--text-3); }
+.strip-border-hit { stroke: transparent; stroke-width: 9; cursor: ew-resize; }
+.strip-tilt { fill: var(--surface); stroke: var(--accent); stroke-width: 1.6; cursor: grab; }
+.strip-tilt.unused { stroke: var(--text-3); }
 
 /* ---- figure preview: always on white, as it will be printed ---- */
 .preview { background: #fff; border: 1px solid var(--border); border-radius: var(--radius-s); padding: var(--s4); display: inline-block; }

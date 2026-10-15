@@ -7,6 +7,10 @@
   const quantify = (WB.quantify = {});
 
   const PLOT = { height: 124, left: 58, right: 10, top: 16, bottom: 18 };
+  // the lane itself, laid on its side under the plot
+  const STRIP = { top: PLOT.height + 2, height: 44 };
+  const PLOT_TOTAL = STRIP.top + STRIP.height + 6;
+  const MAX_TILT = 60;
   const options = { prominencePct: 5, copyHeaders: false };
   quantify.options = options;
 
@@ -38,6 +42,38 @@
     };
   }
 
+  // A border's tilt; a straight border has none, as in files from before tilts.
+  function setTilt(peak, side, deg) {
+    if (deg) peak[`${side}_tilt_deg`] = deg;
+    else delete peak[`${side}_tilt_deg`];
+  }
+
+  // The strip as a picture, one pixel per sample, grey from its low to its high
+  // values; dark bands on light when the blot is shown inverted. Kept with the
+  // strip, which is kept until the lane or image changes.
+  function stripPicture(blot, strip) {
+    const invert = !!blot.session.transform.invert_lut;
+    if (strip.picture && strip.picture.invert === invert) return strip.picture.url;
+    const { n, m, data } = strip;
+    const sorted = Float64Array.from(data).sort();
+    const lo = sorted[Math.floor(0.01 * (sorted.length - 1))];
+    const hi = sorted[Math.floor(0.995 * (sorted.length - 1))];
+    const canvas = document.createElement("canvas");
+    canvas.width = n;
+    canvas.height = m;
+    const ctx = canvas.getContext("2d");
+    const image = ctx.createImageData(n, m);
+    for (let k = 0; k < n * m; k++) {
+      let g = num.clip((data[k] - lo) / (hi - lo || 1), 0, 1);
+      if (invert) g = 1 - g;
+      image.data[4 * k] = image.data[4 * k + 1] = image.data[4 * k + 2] = Math.round(255 * g);
+      image.data[4 * k + 3] = 255;
+    }
+    ctx.putImageData(image, 0, 0);
+    strip.picture = { invert, url: canvas.toDataURL() };
+    return strip.picture.url;
+  }
+
   // pointer position inside a plot, in the coordinates it is drawn in
   const local = (svg, ev) => {
     const p = new DOMPoint(ev.clientX, ev.clientY).matrixTransform(svg.getScreenCTM().inverse());
@@ -65,10 +101,10 @@
 
   function drawPlot(blot, index, svg) {
     const lane = blot.session.lanes[index];
-    const { profile, baseline } = app.curves(blot, lane);
+    const { profile, baseline, strip } = app.curves(blot, lane);
     const s = scales(svg, profile, baseline);
     const current = blot.id === state.selected && index === state.lane;
-    svg.setAttribute("viewBox", `0 0 ${s.width} ${PLOT.height}`);
+    svg.setAttribute("viewBox", `0 0 ${s.width} ${PLOT_TOTAL}`);
     svg.classList.toggle("current", current);
     svg.replaceChildren();
     const add = (tag, attrs, ...kids) => {
@@ -79,8 +115,29 @@
     const redraw = () => drawPlot(blot, index, livePlot(index, svg));
     const finish = () => app.changed("quant");
     const bottom = PLOT.height - PLOT.bottom;
+    const halfWidth = 0.5 * strip.m; // px across the lane, as the strip was sampled
 
-    add("rect", { x: 0, y: 0, width: 4, height: PLOT.height, class: "lane-mark" }); // lit for the current lane
+    // keep the apex inside the borders
+    const fitApex = (peak) => {
+      const [lo, hi] = quant.peakBounds(peak, s.n);
+      if (hi <= lo) return;
+      let best = lo;
+      for (let i = lo; i <= hi; i++)
+        if (profile[i] - baseline[i] > profile[best] - baseline[best]) best = i;
+      peak.apex = best;
+    };
+    // after a drag: start before end, each border keeping its tilt
+    const finishBorder = (peak) => {
+      if (peak.start > peak.end) {
+        const startTilt = peak.start_tilt_deg;
+        [peak.start, peak.end] = [peak.end, peak.start];
+        setTilt(peak, "start", peak.end_tilt_deg || 0);
+        setTilt(peak, "end", startTilt || 0);
+      }
+      finish();
+    };
+
+    add("rect", { x: 0, y: 0, width: 4, height: PLOT_TOTAL, class: "lane-mark" }); // lit for the current lane
     add("rect", { x: PLOT.left, y: PLOT.top, width: s.width - PLOT.left - PLOT.right, height: bottom - PLOT.top, class: "plot-bg" });
     add("text", { x: 8, y: 12, class: "plot-title" }, `Lane ${index + 1}`);
     add("text", { x: PLOT.left - 4, y: PLOT.top + 8, class: "plot-tick", "text-anchor": "end" }, num.format(s.hi, 3));
@@ -112,6 +169,14 @@
       for (let i = a; i <= b; i++) top = Math.max(top, profile[i]);
       add("text", { x: 0.5 * (x0 + x1), y: s.y(top) - 3, class: "peak-number", "text-anchor": "middle" }, peak.band_id);
       ["start", "end"].forEach((side) => {
+        // a tilted border crosses the lane over a range of positions: shown faintly
+        if (peak[`${side}_tilt_deg`]) {
+          const ends = [quant.borderAt(peak, side, -halfWidth), quant.borderAt(peak, side, halfWidth)].map(s.x);
+          add("rect", {
+            x: Math.min(...ends), y: PLOT.top, width: Math.abs(ends[1] - ends[0]), height: bottom - PLOT.top,
+            class: `peak-border-span${used ? "" : " unused"}`, "data-t": "peak-border-span",
+          });
+        }
         add("line", {
           x1: s.x(peak[side]), x2: s.x(peak[side]), y1: PLOT.top, y2: bottom,
           class: `peak-border${used ? "" : " unused"}`, "data-t": "peak-border", "data-index": k, "data-side": side,
@@ -119,23 +184,83 @@
             app.select(blot.id, index);
             dragIn(svg, ev, ([px]) => {
               peak[side] = s.pos(px);
-              // keep the apex inside the borders
-              const [lo, hi] = quant.peakBounds(peak, s.n);
-              if (hi > lo) {
-                let best = lo;
-                for (let i = lo; i <= hi; i++)
-                  if (profile[i] - baseline[i] > profile[best] - baseline[best]) best = i;
-                peak.apex = best;
-              }
+              fitApex(peak);
               redraw();
-            }, () => {
-              if (peak.start > peak.end) [peak.start, peak.end] = [peak.end, peak.start];
-              finish();
-            });
+            }, () => finishBorder(peak));
           },
         });
       });
     });
+
+    drawStrip();
+
+    // The lane on its side under the plot: its top at the left, as in the
+    // plot, and its left edge at the top. Peak borders are drawn as they cross
+    // the lane: dragged to move, by their ends to tilt.
+    function drawStrip() {
+      const top = STRIP.top;
+      const height = STRIP.height;
+      const y = (across) => top + ((across + halfWidth) / (2 * halfWidth)) * height;
+      add("rect", { x: PLOT.left, y: top, width: s.width - PLOT.left - PLOT.right, height, class: "strip-bg" });
+      add("image", {
+        href: stripPicture(blot, strip), x: s.x(-0.5), y: top, width: s.x(s.n - 0.5) - s.x(-0.5), height,
+        preserveAspectRatio: "none", class: "strip-image", "data-t": "lane-strip",
+      });
+      lane.peaks.forEach((peak, k) => {
+        const used = peak.quantify;
+        const at = (side, across) => s.x(quant.borderAt(peak, side, across));
+        const [yt, yb] = [y(-halfWidth), y(halfWidth)];
+        add("polygon", {
+          points: [[at("start", -halfWidth), yt], [at("start", halfWidth), yb], [at("end", halfWidth), yb], [at("end", -halfWidth), yt]]
+            .map((p) => p.join(",")).join(" "),
+          class: `strip-region${used ? "" : " unused"}`, "data-t": "strip-region", "data-index": k,
+          oncontextmenu: (ev) => {
+            ev.preventDefault();
+            app.select(blot.id, index);
+            app.removePeak(lane, peak);
+          },
+        });
+        ["start", "end"].forEach((side) => {
+          const x1 = at(side, -halfWidth);
+          const x2 = at(side, halfWidth);
+          add("line", { x1, y1: yt, x2, y2: yb, class: `strip-border${used ? "" : " unused"}` });
+          // moved as a whole, keeping its tilt; the wide line is what is grabbed
+          add("line", {
+            x1, y1: yt, x2, y2: yb, class: "strip-border-hit", "data-t": "strip-border", "data-index": k, "data-side": side,
+            onpointerdown: (ev) => {
+              app.select(blot.id, index);
+              const from = s.pos(local(svg, ev)[0]);
+              const start = peak[side];
+              dragIn(svg, ev, ([px]) => {
+                peak[side] = num.clip(start + s.pos(px) - from, 0, s.n - 1);
+                fitApex(peak);
+                redraw();
+              }, () => finishBorder(peak));
+            },
+          });
+          // an end tilts the border about where it crosses the centre line
+          [[-1, x1, yt, "top"], [1, x2, yb, "bottom"]].forEach(([sign, cx, cy, end]) =>
+            add("circle", {
+              cx, cy, r: 4.5, class: `strip-tilt${used ? "" : " unused"}`,
+              "data-t": "strip-tilt", "data-index": k, "data-side": side, "data-end": end,
+              onpointerdown: (ev) => {
+                app.select(blot.id, index);
+                dragIn(svg, ev, ([px]) => {
+                  const shift = sign * (s.pos(px) - peak[side]);
+                  const deg = (Math.atan2(shift, halfWidth) * 180) / Math.PI;
+                  setTilt(peak, side, Math.round(num.clip(deg, -MAX_TILT, MAX_TILT) * 10) / 10);
+                  redraw();
+                }, () => finishBorder(peak));
+              },
+              ondblclick: (ev) => {
+                ev.stopPropagation();
+                setTilt(peak, side, 0);
+                finishBorder(peak);
+              },
+            }, dom.svg("title", {}, "Drag to tilt this border; double-click to make it straight again")));
+        });
+      });
+    }
 
     const path = (curve) => {
       let d = "";
@@ -174,7 +299,9 @@
       const [px, py] = local(svg, ev);
       if (px < PLOT.left || px > s.width - PLOT.right) return;
       app.select(blot.id, index);
-      if (ev.shiftKey) toggleAnchor(lane, baseline, s, px, py);
+      if (ev.shiftKey) {
+        if (py <= PLOT.height) toggleAnchor(lane, baseline, s, px, py); // anchors are in the plot, not the strip
+      }
       else app.addPeak(blot, lane, s.pos(px));
     };
   }
@@ -207,7 +334,7 @@
       root.replaceChildren(dom.el("p", { class: "empty" }, "Mark lanes first (Lanes tab)."));
       return;
     }
-    const plots = blot.session.lanes.map((_, i) => dom.svg("svg", { class: "plot", "data-t": "plot", "data-index": i, height: PLOT.height }));
+    const plots = blot.session.lanes.map((_, i) => dom.svg("svg", { class: "plot", "data-t": "plot", "data-index": i, height: PLOT_TOTAL }));
     const noPeaks = blot.session.lanes.every((lane) => !lane.peaks.length);
     root.replaceChildren(
       noPeaks ? dom.el("p", { class: "notice", "data-t": "no-peaks" },
@@ -215,7 +342,7 @@
         dom.primary("Detect peaks", "detect-all-here", () => quantify.detect(blot, true)),
         " to find them in every lane, or double-click a band in a plot.") : "", // not null: the DOM would print it
       dom.el("p", { class: "hint" },
-        "Drag a peak's borders to move them. Double-click a band to add a peak, right-click a peak to remove it. More under the ? at the top."),
+        "Drag a peak's borders to move them; in the lane strip below a plot, drag a border's end to tilt it. Double-click a band to add a peak, right-click to remove it. More under the ?"),
       ...plots);
     plots.forEach((svg, i) => drawPlot(blot, i, svg));
   };
@@ -258,7 +385,8 @@
     const lane = list[state.lane];
     if (!lane) return [dom.el("p", { class: "hint" }, "Mark lanes first (Lanes tab).")];
     const b = lane.baseline;
-    const { profile, baseline } = app.curves(blot, lane);
+    const curves = app.curves(blot, lane);
+    const { profile, baseline } = curves;
     const ends = b.linear_ends || quant.linearEnds(profile);
     const changed = () => app.changed("quant");
     const isLine = b.method === "linear";
@@ -276,7 +404,7 @@
           (v) => { peak.start = v; changed(); })),
         dom.el("td", {}, dom.number(Math.round(peak.end), { t: "peak-end", min: 0, step: 1, width: 54 },
           (v) => { peak.end = v; changed(); })),
-        dom.el("td", { "data-t": "peak-area" }, num.format(quant.peakArea(profile, baseline, peak), 5)),
+        dom.el("td", { "data-t": "peak-area" }, num.format(app.peakArea(blot, lane, peak, curves), 5)),
         dom.el("td", {},
           dom.button("To all", "peak-to-all", () => app.peakToAllLanes(blot, lane, peak),
             "Put this region, at the same rows of the image, into every lane of the blot, in place of their peaks of the same number and those it overlaps."),

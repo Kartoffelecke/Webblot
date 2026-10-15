@@ -347,8 +347,9 @@
       ctx.fillText(String(i + 1), poly[0][1] + 3 * unit, poly[0][0] + 13 * unit);
       const hw = 0.5 * lane.width;
       for (const peak of lane.peaks)
-        for (const pos of [peak.start, peak.end])
-          line([lanes.point(lane, pos, -hw), lanes.point(lane, pos, hw)], peak.quantify ? "#ff7a00" : "#9a9a9a", 1);
+        for (const side of ["start", "end"])
+          line([lanes.point(lane, WB.quant.borderAt(peak, side, -hw), -hw), lanes.point(lane, WB.quant.borderAt(peak, side, hw), hw)],
+            peak.quantify ? "#ff7a00" : "#9a9a9a", 1);
     });
     return canvas;
   }

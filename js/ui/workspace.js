@@ -273,9 +273,10 @@
       // peak borders, display only
       const hw = 0.5 * lane.width;
       for (const peak of lane.peaks) {
-        for (const pos of [peak.start, peak.end]) {
-          const a = lanes.point(lane, pos, -hw);
-          const b = lanes.point(lane, pos, hw);
+        for (const side of ["start", "end"]) {
+          // as it crosses the lane, tilted or not
+          const a = lanes.point(lane, WB.quant.borderAt(peak, side, -hw), -hw);
+          const b = lanes.point(lane, WB.quant.borderAt(peak, side, hw), hw);
           add("line", {
             x1: a[1], y1: a[0], x2: b[1], y2: b[0], class: "note", "data-t": "peak-mark",
             stroke: peak.quantify ? COLORS.peak : COLORS.unused, "stroke-width": 1,

@@ -74,24 +74,39 @@
     );
   }
 
-  // Mean intensity across the lane width for every pixel step along the lane.
-  lanes.extractProfile = function (img, lane) {
+  // The lane as a stack of m lines along it, one per pixel across its width:
+  // data[j * n + i] is line j (from the lane's left edge) at position i.
+  // `across[j]` is the line's distance from the centre line.
+  lanes.extractStrip = function (img, lane) {
     const n = Math.max(Math.round(lanes.length(lane)), 1);
     const m = Math.max(Math.round(lane.width), 1);
     const { u, v } = axes(lane.tilt_deg);
     const yc = lanes.yCenter(lane);
+    const data = new Float64Array(n * m);
+    const across = new Float64Array(m);
+    for (let j = 0; j < m; j++) {
+      const a = (across[j] = j + 0.5 - 0.5 * m);
+      for (let i = 0; i < n; i++) {
+        const t = i + 0.5 - 0.5 * n;
+        data[j * n + i] = sample(img, yc + t * u[0] + a * v[0], lane.x_center + t * u[1] + a * v[1]);
+      }
+    }
+    return { n, m, data, across };
+  };
+
+  // Mean intensity across the lane width for every pixel step along the lane.
+  lanes.stripProfile = function (strip) {
+    const { n, m, data } = strip;
     const out = new Float64Array(n);
     for (let i = 0; i < n; i++) {
-      const t = i + 0.5 - 0.5 * n;
       let s = 0;
-      for (let j = 0; j < m; j++) {
-        const a = j + 0.5 - 0.5 * m;
-        s += sample(img, yc + t * u[0] + a * v[0], lane.x_center + t * u[1] + a * v[1]);
-      }
+      for (let j = 0; j < m; j++) s += data[j * n + i];
       out[i] = s / m;
     }
     return out;
   };
+
+  lanes.extractProfile = (img, lane) => lanes.stripProfile(lanes.extractStrip(img, lane));
 
   const evenCenters = (width, n) => Array.from({ length: n }, (_, i) => ((i + 0.5) * width) / n);
 
