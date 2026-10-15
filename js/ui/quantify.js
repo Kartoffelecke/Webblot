@@ -83,8 +83,8 @@
     add("rect", { x: 0, y: 0, width: 4, height: PLOT.height, class: "lane-mark" }); // lit for the current lane
     add("rect", { x: PLOT.left, y: PLOT.top, width: s.width - PLOT.left - PLOT.right, height: bottom - PLOT.top, class: "plot-bg" });
     add("text", { x: 8, y: 12, class: "plot-title" }, `Lane ${index + 1}`);
-    add("text", { x: PLOT.left - 4, y: PLOT.top + 8, class: "plot-tick", "text-anchor": "end" }, num.formatG(s.hi, 3));
-    add("text", { x: PLOT.left - 4, y: bottom, class: "plot-tick", "text-anchor": "end" }, num.formatG(s.lo, 3));
+    add("text", { x: PLOT.left - 4, y: PLOT.top + 8, class: "plot-tick", "text-anchor": "end" }, num.format(s.hi, 3));
+    add("text", { x: PLOT.left - 4, y: bottom, class: "plot-tick", "text-anchor": "end" }, num.format(s.lo, 3));
     add("text", { x: PLOT.left, y: PLOT.height - 4, class: "plot-tick" }, "0");
     add("text", { x: s.width - PLOT.right, y: PLOT.height - 4, class: "plot-tick", "text-anchor": "end" }, `${s.n - 1} px`);
 
@@ -245,7 +245,7 @@
       dom.el("tr", {}, dom.el("th", {}, ""), bands.map((b) => dom.el("th", {}, `Peak ${b}`))),
       rows.map((row, i) =>
         dom.el("tr", {}, dom.el("th", {}, `Lane ${i + 1}`),
-          row.map((v) => dom.el("td", {}, v === null ? "" : num.formatG(v, 5))))));
+          row.map((v) => dom.el("td", {}, v === null ? "" : num.format(v, 5))))));
   }
 
   quantify.panel = function (blot) {
@@ -270,7 +270,7 @@
           (v) => { peak.start = v; changed(); })),
         dom.el("td", {}, dom.number(Math.round(peak.end), { t: "peak-end", min: 0, step: 1, width: 54 },
           (v) => { peak.end = v; changed(); })),
-        dom.el("td", { "data-t": "peak-area" }, num.formatG(quant.peakArea(profile, baseline, peak), 5)),
+        dom.el("td", { "data-t": "peak-area" }, num.format(quant.peakArea(profile, baseline, peak), 5)),
         dom.el("td", {},
           dom.button("To all", "peak-to-all", () => app.peakToAllLanes(blot, lane, peak),
             "Put this region, at the same rows of the image, into every lane of the blot, in place of their peaks of the same number and those it overlaps."),
@@ -312,7 +312,7 @@
             "Draw a rectangle on empty membrane: its mean becomes the flat background of every lane."),
           blot.bgArea ? dom.button("Remove", "bg-area-remove", () => app.setBackgroundArea(blot, null), "Remove the background area; the lines keep their height.") : null) : null,
         isLine && blot.bgArea ? dom.el("p", { class: "hint", "data-t": "bg-area-level" },
-          `Background area: mean ${num.formatG(app.backgroundLevel(blot) || 0, 5)}. `,
+          `Background area: mean ${num.format(app.backgroundLevel(blot) || 0, 5)}. `,
           b.from_area ? "This lane's line is at that height." : "This lane's line is set by hand; “Apply to all lanes” puts it back.") : null,
         isLine && !blot.bgArea ? dom.el("p", { class: "hint", "data-t": "bg-area-hint" },
           "For total protein: draw the area on empty membrane, at the height of the lanes and away from the dye front. Every lane then gets the same flat background, and what is above it, smear included, is measured.") : null,

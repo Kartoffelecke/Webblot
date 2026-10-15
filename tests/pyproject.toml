@@ -3,7 +3,7 @@ name = "web-blot-tests"
 version = "0"
 description = "Browser tests for web_blot"
 requires-python = ">=3.12"
-dependencies = ["pytest", "pytest-playwright", "numpy", "scipy", "tifffile"]
+dependencies = ["pytest", "pytest-playwright", "numpy", "tifffile"]
 
 [tool.pytest.ini_options]
 testpaths = ["."]

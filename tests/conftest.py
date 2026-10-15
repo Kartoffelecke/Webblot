@@ -1,4 +1,4 @@
-"""Shared fixtures: the page under test, the test images and the reference values."""
+"""Shared fixtures: the page under test and the test images."""
 
 import json
 from pathlib import Path
@@ -87,32 +87,14 @@ def make_blot(shape=(420, 640), n_lanes=8, band_ys=(90, 200, 320), seed=0, gradi
         "bf": to16(bf),
         "centers": centers,
         "band_ys": np.asarray(band_ys, float),
+        "volumes": volumes,
         "ladder_ys": ladder_ys,
     }
 
 
 @pytest.fixture(scope="session")
-def ref():
-    """The recorded numbers the core must reproduce: data/reference.json, and the long curves in data/reference.npz."""
-    values = json.loads((DATA / "reference.json").read_text())
-    with np.load(DATA / "reference.npz") as curves:
-        values.update({key: curves[key] for key in curves.files})
-    return values
-
-
-def checked(pixels, expected):
-    """`pixels`, after making sure it is the image the reference values were recorded for."""
-    assert float(pixels.sum(dtype=np.float64)) == pytest.approx(expected, rel=1e-12), (
-        "the generated test image has changed (another numpy?), so the reference values do not apply"
-    )
-    return pixels
-
-
-@pytest.fixture(scope="session")
-def blot(ref):
+def blot():
     b = make_blot()
-    checked(b["wb"], ref["fingerprint"]["wb"])
-    checked(b["bf"], ref["fingerprint"]["bf"])
     b["img"] = b["wb"].astype(np.float32)
     return b
 
@@ -241,11 +223,23 @@ class Ui:
 
     def document(self):
         """What is open, as text that is the same after it was written and read again: its
-        settings, without the name of the folder and the names the images go by."""
+        settings, without the name of the folder and the images."""
         return self.page.evaluate(
-            """(() => { const d = WB.project.serialize(); delete d.images; d.name = "";
-                return JSON.stringify(d).replace(/"(wb|bf)":"[0-9a-f]+"/g, '"$1":"x"'); })()"""
+            """(() => { const s = WB.state;
+                const origin = (o) => o && { ...o, bf: o.bf ? "x" : null, bfOrigin: origin(o.bfOrigin) };
+                return JSON.stringify({ style: s.style, normalize: s.normalize, blots: s.blots.map((b) => ({
+                    name: b.name, include: b.include, labels: b.labels, roi: b.roi, bg_area: b.bgArea, session: b.session,
+                    bf: b.raw.bf ? "x" : null, bf_origin: origin(b.bfOrigin) })) }); })()"""
         )
+
+    def reopen(self):
+        """Write the open folder and read it again from the work folder."""
+        self.page.evaluate("WB.library.saveNow().then(() => WB.library.open(WB.state.folder.dir))")
+        self.flush()
+
+    def blot_json(self):
+        """The blot.json of the selected blot, as it is written."""
+        return json.loads(self.page.evaluate("WB.library.saveNow().then(() => WB.tree.readText([WB.state.folder.dir, WB.app.blot().disk.dir, 'blot.json']))"))
 
     def saved(self):
         """Wait until everything is written, pictures and tables included."""
@@ -273,11 +267,11 @@ def ui(app):
 
 
 @pytest.fixture
-def blot_files(tmp_path, blot, ref):
+def blot_files(tmp_path, blot):
     """Two synthetic blots as TIFF files."""
     import tifffile
 
-    control = checked(make_blot(seed=5)["wb"], ref["fingerprint"]["control"])
+    control = make_blot(seed=5)["wb"]
     paths = []
     for name, data in (("target", blot["wb"]), ("control", control)):
         path = tmp_path / f"{name}.tif"

@@ -31,7 +31,7 @@ def started(page, url=INDEX_URL, expect_error=False):
 
 
 # what the page knows about where it is, for the message of a failing test
-WHERE = """({ last: localStorage.getItem("web_blot.last"), store: WB.tree.store.kind, waiting: !!WB.tree.waiting,
+WHERE = """({ store: WB.tree.store.kind, waiting: !!WB.tree.waiting,
     folders: WB.library.folders.map((f) => f.name), folder: WB.state.folder, blots: WB.state.blots.length,
     status: document.querySelector("[data-t=save-status]").textContent,
     messages: [...document.querySelectorAll(".toast")].map((t) => t.textContent) })"""
@@ -373,94 +373,6 @@ def test_a_folder_changed_outside_the_page_is_read_again(ui, blot_files):
     assert again.read("target/notes/readme.txt") == "mine" and again.read("target/broken/blot.json") == "{ not json"
 
 
-def old_project(ui):
-    """The open folder as a project file of the kind before folders."""
-    return ui.page.evaluate("JSON.stringify(WB.project.serialize())")
-
-
-def test_project_files_of_before_become_folders(ui, blot_files, browser, tmp_path):
-    ui.add_files(*blot_files)
-    ui.select_blot(0)
-    ui.tab("lanes")
-    ui.set("lane-count", 8)
-    ui.click("detect-lanes")
-    ui.tab("quantify")
-    ui.click("detect-all")
-    ui.tab("figure")
-    ui.t("figure-crop").check()
-    ui.state("(b.session.figure.crop = [59.5, 19.5, 119.5, 619.5], s.style.gap_mm = 5, s.normalize = true, WB.app.changed('figure'))")
-    ui.flush()
-    before, results, figure = ui.document(), ui.state("WB.app.results(b)"), ui.state("WB.figurepanel.build().svg")
-    current = json.loads(old_project(ui))
-    # as version 4 wrote it: each image in its blot, the line width in points, no switch for the area
-    old = {k: v for k, v in current.items() if k not in ("images", "name")}
-    old["version"] = 4
-    old["style"] = {k: v for k, v in current["style"].items() if k not in ("line_width_mm", "decrowd")} | {"line_width": 0.2 * 72 / 25.4}
-    old["blots"] = [{**b, "wb": current["images"][b["wb"]], "session": {**b["session"], "figure": {k: v for k, v in b["session"]["figure"].items() if k != "crop_on"}}} for b in current["blots"]]
-    project = tmp_path / "LC3 time course.webblot.json"
-    project.write_text(json.dumps(old))
-    library = tmp_path / "old.webblot.zip"
-    with zipfile.ZipFile(library, "w") as archive:
-        archive.writestr("library.json", json.dumps({"app": "web_blot", "kind": "library", "version": 1, "projects": [{"id": "a", "name": "From the library", "file": "projects/x.webblot.json"}]}))
-        archive.writestr("projects/x.webblot.json", json.dumps(current))
-
-    context = browser.new_context()
-    other = started(context.new_page())
-    other.t("open-project").set_input_files(str(project))
-    other.page.wait_for_function("WB.state.folder.dir === 'LC3 time course' && WB.state.blots.length === 2")
-    other.saved()
-    # the same numbers and the same figure; its one figure is a figure directory
-    # (the line width went through points and back, which costs a last digit)
-    converted, original = json.loads(other.document()), json.loads(before)
-    assert converted["style"].pop("line_width_mm") == pytest.approx(original["style"].pop("line_width_mm")) and converted == original
-    assert other.state("WB.app.results(b)") == results and other.state("WB.figurepanel.build().svg") == figure
-    assert {"LC3 time course/target/blot.json", "LC3 time course/control/raw.tif", "LC3 time course/Figure/figure.svg"} <= set(other.files())
-    panel = json.loads(other.read("LC3 time course/Figure/figure.json"))["panels"][0]
-    assert panel["area"] == [59.5, 19.5, 119.5, 619.5] and panel["area_on"] is True
-    assert json.loads(other.read("LC3 time course/folder.json"))["normalize"] is True
-    other.t("tree-import-file").set_input_files(str(library))
-    other.page.wait_for_function("WB.state.folder.dir === 'From the library'")
-    other.flush()
-    assert other.document() == before and [f[0] for f in tree_shown(other)] == ["From the library", "LC3 time course"]
-    figure = other.state("WB.figurepanel.build().svg")
-    # what is not a project is said to be none, and nothing changes
-    bad = tmp_path / "bad.webblot.json"
-    bad.write_text("{}")
-    other.t("open-project").set_input_files(str(bad))
-    assert "not a web_blot project" in other.t("toast-error").inner_text() and other.state("s.folder.dir") == "From the library"
-    context.close()
-
-
-def test_projects_in_the_old_browser_storage_are_offered_for_moving_in(ui):
-    ui.click("add-sample")
-    ui.tab("lanes")
-    ui.click("detect-lanes")
-    ui.flush()
-    results = ui.state("WB.app.results(b)")
-    # two projects as the page kept them before folders
-    ui.page.evaluate(
-        """async () => { const d = WB.project.serialize(); const images = Object.fromEntries(Object.entries(d.images).map(([k, v]) => [k, WB.imageio.packedToBinary(v)]));
-            delete d.images;
-            await WB.store.put({ id: "a", name: "Autophagy", created: 1, modified: 2, blots: ["Sample 1"] }, d, images);
-            await WB.store.put({ id: "b", name: "Loading", created: 1, modified: 3, blots: ["Sample 1"] }, d, images);
-            await WB.library.removeFolder(WB.state.folder.dir); }"""
-    )
-    again = started(ui.page)
-    assert "2 projects from before" in again.t("tree-old").inner_text() and again.files() == {}
-    again.click("tree-move-old")
-    again.t("tree-old").wait_for(state="detached")
-    again.flush()
-    assert [f[0] for f in tree_shown(again)] == ["Autophagy", "Loading"] and again.state("WB.app.results(b)") == results
-    # the old copies stay until they are removed, and are not offered again
-    assert len(again.page.evaluate("WB.store.list()")) == 2
-    later = started(again.page)
-    assert later.t("tree-old").count() == 0 and later.t("tree-remove-old").is_visible()
-    later.click("tree-remove-old")
-    later.click("confirm-ok")
-    later.page.wait_for_function("document.querySelector('[data-t=tree-remove-old]') === null")
-    assert later.page.evaluate("WB.store.list()") == [] and [f[0] for f in tree_shown(later)] == ["Autophagy", "Loading"]
-
-
 def test_the_page_works_where_the_browser_stores_nothing(browser, blot_files):
     context = browser.new_context()
     context.add_init_script("Object.defineProperty(window, 'indexedDB', { get() { throw new Error('storage is blocked'); } })")
@@ -552,7 +464,3 @@ def test_the_open_folder_is_remembered_where_a_reload_finds_it(ui, blot_files):
     ui.saved()
     again = started(ui.page)
     assert again.state("[s.folder.dir, s.blots.map((b) => b.name)]") == ["New folder", ["control"]], again.page.evaluate(WHERE)
-    # where an earlier version kept it in localStorage, that is read
-    again.page.evaluate("(async () => { await WB.tree.setting('web_blot.last', null); localStorage.setItem('web_blot.last', 'target'); })()")
-    later = started(again.page)
-    assert later.state("[s.folder.dir, s.blots.map((b) => b.name)]") == ["target", ["target"]], later.page.evaluate(WHERE)

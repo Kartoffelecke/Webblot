@@ -1,10 +1,8 @@
-// The data model: plain objects, saved as they are in a project file.
+// The data model: plain objects.
 (function () {
   "use strict";
   const WB = (window.WB = window.WB || {});
   const model = (WB.model = {});
-
-  model.PROJECT_VERSION = 7;
 
   // The folder that is open: its name (empty: it goes by the name of its first
   // blot) and its directory in the work folder (null: not written yet).
@@ -15,7 +13,7 @@
   // show_bf }. `dir` is its directory in the folder (null: not written yet).
   model.newFigure = (name = "Figure") => ({ id: model.newId(), name, style: model.style(), panels: new Map(), dir: null });
 
-  // a random name for a project or an image
+  // a random name for an image
   model.newId = function () {
     const bytes = crypto.getRandomValues(new Uint8Array(8));
     return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
