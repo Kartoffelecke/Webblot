@@ -1646,7 +1646,8 @@ def test_valley_to_valley_background_in_the_quantify_tab(quantified):
     rolling = ui.state("WB.app.results(b).rows")
     borders = ui.state("b.session.lanes.map((l) => l.peaks.map((p) => [p.start, p.end]))")
     ui.choose("bg-method", "valley")
-    assert ui.t("valley-hint").is_visible() and ui.t("bg-radius").is_enabled()
+    # the line between the borders has no radius
+    assert ui.t("valley-hint").is_visible() and ui.t("bg-radius").is_disabled()
     ui.click("bg-all")
     ui.flush()
     assert ui.state("b.session.lanes.map((l) => l.baseline.method)") == ["valley"] * 8
@@ -1688,6 +1689,24 @@ def test_valley_to_valley_background_in_the_quantify_tab(quantified):
     # saved with the folder
     ui.reopen()
     assert ui.state("b.session.lanes[0].baseline.method") == "valley" and ui.state("WB.app.results(b).rows[0][0]") == pytest.approx(before, rel=1e-9)
+
+    # Edit by hand puts the anchors at the ends and at the borders of every peak,
+    # where the lines are anchored, not evenly spaced
+    ui.tab("quantify")
+    lane = ui.state("WB.state.lane")
+    rows_before = ui.state("WB.app.results(b).rows")
+    expected_x = ui.state(
+        f"""(() => {{ const l = b.session.lanes[{lane}], n = WB.app.curves(b, l).profile.length;
+            const xs = new Set([0, n - 1]);
+            for (const p of l.peaks) for (const i of WB.quant.peakBounds(p, n)) xs.add(i);
+            return [...xs].sort((p, q) => p - q); }})()"""
+    )
+    ui.click("bg-edit")
+    ui.flush()
+    assert ui.state(f"b.session.lanes[{lane}].baseline.method") == "manual"
+    assert ui.state(f"b.session.lanes[{lane}].baseline.anchors.map((a) => a[0])") == expected_x
+    # with the same lines under the peaks, the areas stay (unless the profile dips below a line)
+    assert ui.state(f"WB.app.results(b).rows[{lane}]") == pytest.approx(rows_before[lane], rel=0.01)
 
 
 def expected_level(box, image):

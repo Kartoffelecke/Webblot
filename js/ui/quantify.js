@@ -179,11 +179,16 @@
     };
   }
 
+  // The lane's current background as anchor points to edit by hand. Valley to
+  // valley keeps its corners at the peak borders; others are sampled evenly.
+  const anchorsOf = (lane, baseline) =>
+    lane.baseline.method === "valley" ? quant.valleyAnchors(baseline, lane.peaks) : quant.baselineToAnchors(baseline);
+
   // Shift + double-click: add a background anchor, or remove the one under the cursor.
   function toggleAnchor(lane, baseline, s, px, py) {
     const b = lane.baseline;
     if (b.method !== "manual") {
-      b.anchors = quant.baselineToAnchors(baseline);
+      b.anchors = anchorsOf(lane, baseline);
       b.method = "manual";
     }
     const hit = b.anchors.findIndex(([ax, ay]) => Math.abs(s.x(ax) - px) < 10 && Math.abs(s.y(ay) - py) < 10);
@@ -257,6 +262,7 @@
     const ends = b.linear_ends || quant.linearEnds(profile);
     const changed = () => app.changed("quant");
     const isLine = b.method === "linear";
+    const toAnchors = () => anchorsOf(lane, baseline);
 
     const peakRows = lane.peaks.map((peak, k) =>
       dom.el("tr", { "data-t": "peak-row" },
@@ -292,15 +298,15 @@
         dom.el("p", { class: "hint" }, "Or on the blot: drag the lane to move it, and its handles for length, width and tilt.")),
       dom.group("Background",
         dom.row("Method", dom.select(METHOD_LABELS, b.method, "bg-method", (v) => {
-          if (v === "manual" && !b.anchors.length) b.anchors = quant.baselineToAnchors(baseline);
+          if (v === "manual" && !b.anchors.length) b.anchors = toAnchors();
           b.method = v;
           if (v !== "linear") b.from_area = false;
           changed();
         })),
-        dom.row("Radius", dom.number(b.radius, { t: "bg-radius", min: 2, max: 2000, step: 1, disabled: b.method !== "rolling" && b.method !== "valley" },
+        dom.row("Radius", dom.number(b.radius, { t: "bg-radius", min: 2, max: 2000, step: 1, disabled: b.method !== "rolling" },
           (v) => { b.radius = v; changed(); }), "px"),
         b.method === "valley" ? dom.el("p", { class: "hint", "data-t": "valley-hint" },
-          "Each peak is measured above the straight line between its two borders, so the borders decide the result: drag them into the valleys. The radius is only used to find peaks.") : null,
+          "Each peak is measured above the straight line between its two borders, so the borders decide the result: drag them into the valleys. The peaks themselves come from the Peaks section or a double-click.") : null,
         dom.row("Line start / end",
           dom.number(Math.round(ends[0]), { t: "bg-line-start", step: 1, disabled: !isLine }, (v) => { b.linear_ends = [v, ends[1]]; b.from_area = false; changed(); }),
           dom.number(Math.round(ends[1]), { t: "bg-line-end", step: 1, disabled: !isLine }, (v) => { b.linear_ends = [ends[0], v]; b.from_area = false; changed(); }),
@@ -319,7 +325,7 @@
         dom.row(null,
           dom.button("Edit by hand", "bg-edit", () => {
             if (b.method !== "manual") {
-              b.anchors = quant.baselineToAnchors(baseline);
+              b.anchors = toAnchors();
               b.method = "manual";
             }
             changed();

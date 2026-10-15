@@ -108,6 +108,16 @@
     return xs.map((i) => [i, curve[i]]);
   };
 
+  // Anchor points for a valley-to-valley background: the two ends of the
+  // profile and the two borders of every peak, so that the lines between the
+  // anchors are the lines under the peaks.
+  quant.valleyAnchors = function (curve, peaks) {
+    const n = curve.length;
+    const xs = new Set([0, n - 1]);
+    for (const peak of peaks) for (const i of quant.peakBounds(peak, n)) xs.add(i);
+    return [...xs].sort((a, b) => a - b).map((i) => [i, curve[i]]);
+  };
+
   function corrected(profile, baseline, smooth) {
     const diff = new Float64Array(profile.length);
     for (let i = 0; i < diff.length; i++) diff[i] = profile[i] - baseline[i];
