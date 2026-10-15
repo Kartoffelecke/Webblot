@@ -89,13 +89,11 @@
               "Make the brightfield a blot of its own again, with the name and settings it had.")),
           dom.row(null,
             dom.check("Show", t.bf_show, "bf-show", (v) => { t.bf_show = v; display(); }),
-            dom.check("Invert", t.bf_invert, "bf-invert", (v) => { t.bf_invert = v; display(); },
-              "Tick if the marker bands are bright in the brightfield image."),
             dom.button("Remove", "bf-remove", () => {
               WB.feedback.confirm("Remove the brightfield image? “Split off” keeps it as a blot of its own instead.", "Remove image", { danger: true })
                 .then((yes) => yes && app.setBrightfield(blot, null));
             }, "Delete the brightfield image.")),
-          dom.el("p", { class: "hint" }, "Its min, max and gamma are below the blot's, under the image."),
+          dom.el("p", { class: "hint" }, "Its min, max, gamma and Invert are below the blot's, under the image."),
         ] : dom.el("p", { class: "hint" },
           "Optional image of the same membrane with the visible marker. Choose a file, or drag another blot by its handle onto this blot's image.")),
       others(blot).length ? dom.group("Copy setup",

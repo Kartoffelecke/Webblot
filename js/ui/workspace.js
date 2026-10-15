@@ -539,8 +539,13 @@
       t.invert_lut = v;
       app.changed("display");
     }, "Invert the display only; measured values do not change"));
-    if (bf)
+    if (bf) {
       rows.push(exposureRow(blot, "Brightfield", "bf-", { limits: "bf_contrast_limits", gamma: "bf_gamma" }, bf, bfRange, 99.5));
+      rows[1].append(dom.check("Invert", t.bf_invert, "bf-invert", (v) => {
+        t.bf_invert = v;
+        app.changed("display");
+      }, "Tick if the marker bands are bright in the brightfield image."));
+    }
     return dom.el("div", { class: "card-controls" }, rows);
   }
 

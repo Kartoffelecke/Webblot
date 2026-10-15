@@ -834,6 +834,17 @@ def test_brightfield_overlay_with_its_own_exposure(ui, blot_files, blot, tmp_pat
     assert ui.state("[b.session.transform.gamma, b.session.transform.bf_gamma]") == [1, 1]
     assert ui.state("b.session.transform.contrast_limits") == pytest.approx(blot_limits)
 
+    # the brightfield's Invert is on its own row under the image, beside the blot's
+    assert rows.nth(1).locator("[data-t=bf-invert]").count() == 1
+    assert rows.nth(0).locator("[data-t=invert]").count() == 1
+    assert page.locator("[data-t=bf-invert]").count() == 1  # and no longer in the side panel
+    card.locator("[data-t=bf-invert]").check()
+    ui.flush()
+    assert ui.state("b.session.transform.bf_invert") is True
+    assert canvas_pixel(ui, *ladder) < without + 100  # the marker band is no longer shown bright
+    card.locator("[data-t=bf-invert]").uncheck()
+    ui.flush()
+
     ui.t("bf-show").uncheck()
     ui.flush()
     assert canvas_pixel(ui, *ladder) == without
