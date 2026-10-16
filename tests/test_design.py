@@ -45,14 +45,13 @@ def test_a_first_visit_gets_a_tour(page):
             spot, part = ui.rect(ui.t("tour-spot")), ui.rect(ui.t(lit[n]))
             assert spot["x"] <= part["x"] and part["x"] + part["width"] <= spot["x"] + spot["width"]
             assert spot["y"] <= part["y"] and part["y"] + part["height"] <= spot["y"] + spot["height"]
-    # the arrow keys go back and forth; the last stop offers the sample
+    # the arrow keys go back and forth; the last stop offers the walkthrough
     ui.page.keyboard.press("ArrowLeft")
     assert ui.t("tour-count").inner_text() == "6 of 7"
     ui.page.keyboard.press("ArrowRight")
-    ui.click("tour-sample")
+    assert ui.t("tour-walkthrough").is_visible()
+    ui.click("tour-done")
     tour.wait_for(state="detached")
-    ui.flush()
-    assert ui.state("s.blots.length") == 1
     # once is enough: not again after a reload
     ui.page.reload()
     ui.page.evaluate("WB.library.ready")
@@ -258,3 +257,47 @@ def test_a_question_before_what_cannot_be_undone(ui, blot_files):
     ui.choose("copy-from", str(ui.state("s.blots[1].id")))
     ui.confirm()
     assert ui.state("b.session.lanes.length") == 0
+
+
+def test_the_walkthrough_takes_the_sample_through_every_step(ui, blot_files):
+    ui.page.emulate_media(reduced_motion="reduce")
+    # somebody's own work is open
+    ui.add_files(blot_files[0])
+    ui.saved()
+    assert ui.state("s.folder.dir") == "target"
+    ui.click("help")
+    ui.click("help-walkthrough")
+    tour = ui.t("tour")
+    tour.wait_for()
+    assert "1 of 10" in ui.t("tour-count").inner_text() and ui.t("tour-back").count() == 0
+    titles = []
+    while ui.t("tour-next").count():
+        ui.click("tour-next")
+        ui.page.wait_for_selector("[data-t=tour]:not(.busy)")
+        titles.append(ui.t("tour-title").inner_text())
+        # what is lit is on screen
+        if ui.t("tour-spot").count():
+            spot = ui.rect(ui.t("tour-spot"))
+            assert spot["width"] > 0 and spot["x"] >= 0 and spot["y"] >= 0, titles[-1]
+    assert len(titles) == 9 and titles[-1] == "That's all"
+    # in a folder of its own: the sample cropped, its lanes and bands, a labelled figure
+    assert ui.state("s.folder.dir") == "Tutorial" and ui.state("s.blots.length") == 1
+    assert ui.state("b.session.transform.crop") == [30, 20, 390, 620]
+    assert ui.state("b.session.lanes.map((l) => l.peaks.length)") == [3] * 8
+    assert ui.state("b.session.figure.label_rows[0].values") == ["Control"] * 4 + ["Treated"] * 4
+    assert ui.state("[b.session.figure.mw_markers.length, b.session.figure.band_markers.length]") == [6, 3]
+    assert "Treated" in ui.state("WB.figurepanel.build().svg")
+    # deleted at the end: back to what was open before
+    ui.click("walk-delete")
+    tour.wait_for(state="detached")
+    ui.page.wait_for_function("WB.state.folder.dir === 'target'")
+    ui.flush()
+    assert [f[0] for f in ui.page.evaluate("WB.library.folders.map((f) => [f.name])")] == ["target"]
+    # stopped half way, it says where its folder is
+    ui.click("help")
+    ui.click("help-walkthrough")
+    ui.click("tour-next")
+    ui.page.wait_for_selector("[data-t=tour]:not(.busy)")
+    ui.click("tour-skip")
+    tour.wait_for(state="detached")
+    assert "Tutorial" in ui.t("toast").inner_text()

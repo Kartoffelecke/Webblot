@@ -31,8 +31,9 @@ and figures. Everything is saved as you work.
 The numbered bar under the header leads through the steps of the selected
 blot; keys `1`–`4` switch, `?` lists all mouse and key actions. The panel on
 the right belongs to the current step, with its usual action as the coloured
-button. A short tour of the page is shown on the first visit; the help (`?`)
-starts it again.
+button. A short tour of the page is shown on the first visit. The help (`?`)
+starts it again, and a walkthrough that takes the sample blot through all four
+steps in a folder of its own.
 
 1. **Prepare**: rotate, straighten along a drawn line, crop, or cut an area
    out as a new blot. A brightfield image of the same membrane (the marker) can
