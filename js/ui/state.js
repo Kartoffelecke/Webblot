@@ -377,10 +377,7 @@
       for (let i = Math.ceil(a); i <= Math.floor(b); i++) if (profile[i] - baseline[i] > profile[apex] - baseline[apex]) apex = i;
       other.peaks = other.peaks.filter((p) => p.band_id !== peak.band_id && (Math.max(p.start, p.end) < a || Math.min(p.start, p.end) > b));
       const copy = { start: a, end: b, apex, band_id: peak.band_id, quantify: true };
-      // tilted borders keep their slant (borders swapped in order keep theirs)
-      const [first, last] = peak.start <= peak.end ? ["start", "end"] : ["end", "start"];
-      if (peak[`${first}_tilt_deg`]) copy.start_tilt_deg = peak[`${first}_tilt_deg`];
-      if (peak[`${last}_tilt_deg`]) copy.end_tilt_deg = peak[`${last}_tilt_deg`];
+      if (peak.tilt_deg) copy.tilt_deg = peak.tilt_deg; // a tilted peak keeps its slant
       other.peaks.push(copy);
       other.peaks.sort((p, q) => p.apex - q.apex);
     }

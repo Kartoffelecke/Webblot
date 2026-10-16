@@ -193,14 +193,15 @@
     return [a, b];
   };
 
-  // A border may be tilted against the line straight across the lane
-  // (`start_tilt_deg`, `end_tilt_deg`; missing is 0). `peak.start` and
-  // `peak.end` are where the borders cross the lane's centre line; `across`
-  // px off it, a border is this far along the lane.
+  // A band that runs crooked in its lane is followed by tilting the peak
+  // (`tilt_deg`, against the line straight across the lane; missing is 0):
+  // both borders turn by it. `peak.start` and `peak.end` are where the borders
+  // cross the lane's centre line; `across` px off it, a border is this far
+  // along the lane.
   quant.borderAt = (peak, side, across) =>
-    peak[side] + across * Math.tan(((peak[`${side}_tilt_deg`] || 0) * Math.PI) / 180);
+    peak[side] + across * Math.tan(((peak.tilt_deg || 0) * Math.PI) / 180);
 
-  quant.isTilted = (peak) => !!(peak.start_tilt_deg || peak.end_tilt_deg);
+  quant.isTilted = (peak) => !!peak.tilt_deg;
 
   // Baseline-subtracted area between the peak borders (trapezoid rule).
   //

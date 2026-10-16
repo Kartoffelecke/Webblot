@@ -1725,7 +1725,8 @@ def test_lane_strip_moves_and_tilts_peak_borders(quantified):
 
     strip = page.locator("svg.plot").nth(0)
     border = lambda side: strip.locator(f"[data-t=strip-border][data-index='0'][data-side={side}]")
-    handle = lambda side, end: strip.locator(f"[data-t=strip-tilt][data-index='0'][data-side={side}][data-end={end}]")
+    knob = strip.locator("[data-t=strip-tilt][data-index='0']")
+    assert strip.locator("[data-t=strip-tilt]").count() == 3  # one knob per peak
 
     # dragged, a border moves along the lane and stays straight
     start = ui.state("b.session.lanes[0].peaks[0].start")
@@ -1733,42 +1734,61 @@ def test_lane_strip_moves_and_tilts_peak_borders(quantified):
     ui.drag((x, y), (x - 3 * per_px, y))
     ui.flush()
     assert ui.state("b.session.lanes[0].peaks[0].start") == pytest.approx(start - 3, abs=0.6)
-    assert "start_tilt_deg" not in ui.state("b.session.lanes[0].peaks[0]")
+    assert "tilt_deg" not in ui.state("b.session.lanes[0].peaks[0]")
 
-    # dragged by an end, it tilts about where it crosses the centre line
+    # the knob above the peak turns both borders together, about where they cross the centre line
     straight = ui.state("WB.app.results(b).rows[0][0]")
-    end = ui.state("b.session.lanes[0].peaks[0].end")
+    start, end = ui.state("[b.session.lanes[0].peaks[0].start, b.session.lanes[0].peaks[0].end]")
     half = ui.state("WB.app.curves(b, b.session.lanes[0]).strip.m") / 2
-    x, y = centre(handle("end", "bottom"))
+    x, y = centre(knob)
     ui.drag((x, y), (x + 4 * per_px, y))
     ui.flush()
-    tilt = ui.state("b.session.lanes[0].peaks[0].end_tilt_deg")
-    assert tilt == pytest.approx(np.degrees(np.arctan(4 / half)), abs=1.5)
-    assert ui.state("b.session.lanes[0].peaks[0].end") == end
+    # the knob stands 9 px above the 44 px strip, so 9 / 44 of the lane's width beyond its edge
+    tilt = ui.state("b.session.lanes[0].peaks[0].tilt_deg")
+    assert tilt == pytest.approx(-np.degrees(np.arctan(4 / (half * (1 + 18 / 44)))), abs=1.5)
+    assert ui.state("[b.session.lanes[0].peaks[0].start, b.session.lanes[0].peaks[0].end]") == [start, end]
+    # both borders are slanted alike, in the strip and on the blot
+    slants = [ui.rect(border(side)) for side in ("start", "end")]
+    assert slants[0]["width"] == pytest.approx(slants[1]["width"], abs=1) and slants[0]["width"] > 3
+    marks = page.locator("[data-t=card] [data-t=peak-mark]")
+    for i in (0, 1):  # lane 1, peak 1, start and end
+        assert float(marks.nth(i).get_attribute("y1")) != pytest.approx(float(marks.nth(i).get_attribute("y2")), abs=0.5)
     tilted = ui.state("WB.app.results(b).rows[0][0]")
     assert tilted != pytest.approx(straight, rel=1e-6)
     assert float(ui.t("peak-area").inner_text()) == pytest.approx(tilted, rel=1e-4)
-    # in the plot the tilted border shows the positions it covers; on the blot it is slanted
-    assert strip.locator("[data-t=peak-border-span]").count() == 1
-    mark = page.locator("[data-t=card] [data-t=peak-mark]").nth(1)  # lane 1, peak 1, end
-    assert float(mark.get_attribute("y1")) != pytest.approx(float(mark.get_attribute("y2")), abs=0.5)
+    assert strip.locator("[data-t=peak-border-span]").count() == 2
 
-    # a double-click on the end makes it straight again
-    centre_now = centre(handle("end", "bottom"))
-    page.mouse.dblclick(*centre_now)
+    # a double-click on the knob makes the peak straight again
+    page.mouse.dblclick(*centre(knob))
     ui.flush()
-    assert "end_tilt_deg" not in ui.state("b.session.lanes[0].peaks[0]")
+    assert "tilt_deg" not in ui.state("b.session.lanes[0].peaks[0]")
     assert ui.state("WB.app.results(b).rows[0][0]") == pytest.approx(straight, rel=1e-12)
     assert ui.state("b.session.lanes[0].peaks.length") == 3  # and no peak was added
 
     # "To all" takes the tilt along; it is saved with the folder
-    ui.state("(b.session.lanes[0].peaks[0].end_tilt_deg = 12, WB.app.changed('quant'))")
+    ui.state("(b.session.lanes[0].peaks[0].tilt_deg = 12, WB.app.changed('quant'))")
     ui.flush()
     ui.t("peak-to-all").click()
     ui.flush()
-    assert ui.state("b.session.lanes.map((l) => l.peaks.find((p) => p.band_id === 1).end_tilt_deg)") == [12] * 8
+    assert ui.state("b.session.lanes.map((l) => l.peaks.find((p) => p.band_id === 1).tilt_deg)") == [12] * 8
     ui.reopen()
-    assert ui.state("b.session.lanes[3].peaks.find((p) => p.band_id === 1).end_tilt_deg") == 12
+    assert ui.state("b.session.lanes[3].peaks.find((p) => p.band_id === 1).tilt_deg") == 12
+
+    # a blot saved when each border had a tilt of its own reads as one tilt, their mean
+    ui.page.evaluate(
+        """async () => {
+            const path = [WB.state.folder.dir, WB.app.blot().disk.dir, "blot.json"];
+            const doc = JSON.parse(await WB.tree.readText(path));
+            const p = doc.lanes[2].peaks[0];
+            delete p.tilt_deg;
+            Object.assign(p, { start_tilt_deg: 10, end_tilt_deg: 5 });
+            await WB.tree.store.write(path, new TextEncoder().encode(JSON.stringify(doc)));
+            await WB.library.open(WB.state.folder.dir);
+        }"""
+    )
+    ui.flush()
+    old = ui.state("b.session.lanes[2].peaks.find((p) => p.band_id === 1)")
+    assert old["tilt_deg"] == 7.5 and "start_tilt_deg" not in old and "end_tilt_deg" not in old
 
 
 def expected_level(box, image):

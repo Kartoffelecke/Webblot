@@ -157,7 +157,7 @@
         dom.el("h3", {}, "In the lane strip under a plot"),
         dom.el("dl", {},
           row("Move a peak's border", "Drag it"),
-          row("Tilt a border", "Drag one of its ends, for a band that runs crooked; double-click an end to straighten it")),
+          row("Tilt a peak", "Drag the knob above it, for a band that runs crooked; double-click the knob to straighten it")),
         dom.el("h3", {}, "In a table of labels"),
         dom.el("dl", {},
           row("Next row", [key("Enter"), " or ", key("↓")]),

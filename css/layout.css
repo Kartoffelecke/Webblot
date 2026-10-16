@@ -148,6 +148,8 @@ svg.plot.current .plot-title { fill: var(--accent); }
 .strip-border.unused { stroke: var(--text-3); }
 .strip-border-hit { stroke: transparent; stroke-width: 9; cursor: ew-resize; }
 .strip-tilt { fill: var(--surface); stroke: var(--accent); stroke-width: 1.6; cursor: grab; }
+.strip-stem { stroke: var(--accent); stroke-width: 1.2; pointer-events: none; }
+.strip-stem.unused { stroke: var(--text-3); }
 .strip-tilt.unused { stroke: var(--text-3); }
 
 /* ---- figure preview: always on white, as it will be printed ---- */

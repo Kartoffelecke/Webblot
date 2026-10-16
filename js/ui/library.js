@@ -138,6 +138,16 @@
     const session = model.session();
     Object.assign(session.transform, doc.transform);
     session.lanes = doc.lanes || [];
+    // a peak tilted by border (start_tilt_deg, end_tilt_deg; briefly in
+    // October 2026) is tilted as a whole by their mean
+    for (const lane of session.lanes)
+      for (const peak of lane.peaks || []) {
+        if (!("start_tilt_deg" in peak || "end_tilt_deg" in peak)) continue;
+        const deg = Math.round((((peak.start_tilt_deg || 0) + (peak.end_tilt_deg || 0)) / 2) * 10) / 10;
+        delete peak.start_tilt_deg;
+        delete peak.end_tilt_deg;
+        if (deg) peak.tilt_deg = deg;
+      }
     Object.assign(session.figure, {
       label_rows: doc.lane_labels || [],
       mw_markers: doc.mw_markers || [], mw_side: doc.mw_side || "left",

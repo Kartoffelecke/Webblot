@@ -8,7 +8,8 @@
 
   const PLOT = { height: 124, left: 58, right: 10, top: 16, bottom: 18 };
   // the lane itself, laid on its side under the plot
-  const STRIP = { top: PLOT.height + 2, height: 44 };
+  // with room above it for the knobs that tilt the peaks (`knob` px above)
+  const STRIP = { top: PLOT.height + 14, height: 44, knob: 9 };
   const PLOT_TOTAL = STRIP.top + STRIP.height + 6;
   const MAX_TILT = 60;
   const options = { prominencePct: 5, copyHeaders: false };
@@ -42,10 +43,10 @@
     };
   }
 
-  // A border's tilt; a straight border has none, as in files from before tilts.
-  function setTilt(peak, side, deg) {
-    if (deg) peak[`${side}_tilt_deg`] = deg;
-    else delete peak[`${side}_tilt_deg`];
+  // A peak's tilt; a straight peak has none, as in files from before tilts.
+  function setTilt(peak, deg) {
+    if (deg) peak.tilt_deg = deg;
+    else delete peak.tilt_deg;
   }
 
   // The strip as a picture, one pixel per sample, grey from its low to its high
@@ -126,14 +127,9 @@
         if (profile[i] - baseline[i] > profile[best] - baseline[best]) best = i;
       peak.apex = best;
     };
-    // after a drag: start before end, each border keeping its tilt
+    // after a drag: start before end
     const finishBorder = (peak) => {
-      if (peak.start > peak.end) {
-        const startTilt = peak.start_tilt_deg;
-        [peak.start, peak.end] = [peak.end, peak.start];
-        setTilt(peak, "start", peak.end_tilt_deg || 0);
-        setTilt(peak, "end", startTilt || 0);
-      }
+      if (peak.start > peak.end) [peak.start, peak.end] = [peak.end, peak.start];
       finish();
     };
 
@@ -170,7 +166,7 @@
       add("text", { x: 0.5 * (x0 + x1), y: s.y(top) - 3, class: "peak-number", "text-anchor": "middle" }, peak.band_id);
       ["start", "end"].forEach((side) => {
         // a tilted border crosses the lane over a range of positions: shown faintly
-        if (peak[`${side}_tilt_deg`]) {
+        if (peak.tilt_deg) {
           const ends = [quant.borderAt(peak, side, -halfWidth), quant.borderAt(peak, side, halfWidth)].map(s.x);
           add("rect", {
             x: Math.min(...ends), y: PLOT.top, width: Math.abs(ends[1] - ends[0]), height: bottom - PLOT.top,
@@ -196,11 +192,13 @@
 
     // The lane on its side under the plot: its top at the left, as in the
     // plot, and its left edge at the top. Peak borders are drawn as they cross
-    // the lane: dragged to move, by their ends to tilt.
+    // the lane and dragged to move; a knob above each peak turns it, as the
+    // knob above a lane on the blot turns the lane.
     function drawStrip() {
       const top = STRIP.top;
       const height = STRIP.height;
       const y = (across) => top + ((across + halfWidth) / (2 * halfWidth)) * height;
+      const acrossAt = (py) => ((py - top) / height) * 2 * halfWidth - halfWidth;
       add("rect", { x: PLOT.left, y: top, width: s.width - PLOT.left - PLOT.right, height, class: "strip-bg" });
       add("image", {
         href: stripPicture(blot, strip), x: s.x(-0.5), y: top, width: s.x(s.n - 0.5) - s.x(-0.5), height,
@@ -238,27 +236,30 @@
               }, () => finishBorder(peak));
             },
           });
-          // an end tilts the border about where it crosses the centre line
-          [[-1, x1, yt, "top"], [1, x2, yb, "bottom"]].forEach(([sign, cx, cy, end]) =>
-            add("circle", {
-              cx, cy, r: 4.5, class: `strip-tilt${used ? "" : " unused"}`,
-              "data-t": "strip-tilt", "data-index": k, "data-side": side, "data-end": end,
-              onpointerdown: (ev) => {
-                app.select(blot.id, index);
-                dragIn(svg, ev, ([px]) => {
-                  const shift = sign * (s.pos(px) - peak[side]);
-                  const deg = (Math.atan2(shift, halfWidth) * 180) / Math.PI;
-                  setTilt(peak, side, Math.round(num.clip(deg, -MAX_TILT, MAX_TILT) * 10) / 10);
-                  redraw();
-                }, () => finishBorder(peak));
-              },
-              ondblclick: (ev) => {
-                ev.stopPropagation();
-                setTilt(peak, side, 0);
-                finishBorder(peak);
-              },
-            }, dom.svg("title", {}, "Drag to tilt this border; double-click to make it straight again")));
         });
+        // the knob above the peak's middle turns both borders about where they
+        // cross the centre line; the tilt follows the line from it to that point
+        const middle = 0.5 * (peak.start + peak.end);
+        const tan = Math.tan(((peak.tilt_deg || 0) * Math.PI) / 180);
+        const knobAcross = acrossAt(top - STRIP.knob);
+        const [sx, kx] = [s.x(middle - halfWidth * tan), s.x(middle + knobAcross * tan)];
+        add("line", { x1: sx, y1: yt, x2: kx, y2: top - STRIP.knob, class: `strip-stem${used ? "" : " unused"}` });
+        add("circle", {
+          cx: kx, cy: top - STRIP.knob, r: 4.5, class: `strip-tilt${used ? "" : " unused"}`, "data-t": "strip-tilt", "data-index": k,
+          onpointerdown: (ev) => {
+            app.select(blot.id, index);
+            dragIn(svg, ev, ([px, py]) => {
+              const deg = (Math.atan2(middle - s.pos(px), Math.max(-acrossAt(py), 1)) * 180) / Math.PI;
+              setTilt(peak, Math.round(num.clip(deg, -MAX_TILT, MAX_TILT) * 10) / 10);
+              redraw();
+            }, () => finishBorder(peak));
+          },
+          ondblclick: (ev) => {
+            ev.stopPropagation();
+            setTilt(peak, 0);
+            finishBorder(peak);
+          },
+        }, dom.svg("title", {}, "Drag to tilt the peak along a band that runs crooked; double-click to straighten it"));
       });
     }
 
@@ -342,7 +343,7 @@
         dom.primary("Detect peaks", "detect-all-here", () => quantify.detect(blot, true)),
         " to find them in every lane, or double-click a band in a plot.") : "", // not null: the DOM would print it
       dom.el("p", { class: "hint" },
-        "Drag a peak's borders to move them; in the lane strip below a plot, drag a border's end to tilt it. Double-click a band to add a peak, right-click to remove it. More under the ?"),
+        "Drag a peak's borders to move it, its knob in the lane strip to tilt it. Double-click a band to add a peak, right-click to remove it. More under the ?"),
       ...plots);
     plots.forEach((svg, i) => drawPlot(blot, i, svg));
   };

@@ -290,7 +290,7 @@ def test_tilted_borders_follow_a_crooked_band(app):
     centre = 100 - 20.5  # the band crosses the centre line here (position i is image row 20.5 + i)
     tilt = float(np.degrees(np.arctan(slope)))
     straight = peak(centre - 9, centre + 9, round(centre))
-    tilted = {**straight, "start_tilt_deg": tilt, "end_tilt_deg": tilt}
+    tilted = {**straight, "tilt_deg": tilt}
     area = lambda p, method="linear": app.evaluate(
         """([data, w, h, lane, peak]) => {
             const img = { w, h, data: Float64Array.from(data) };
