@@ -3,19 +3,72 @@
 import re
 
 import pytest
-from conftest import INDEX_URL, Ui
+from conftest import INDEX_URL, NO_TOUR, Ui
+
+
+def first_visit(page):
+    errors = []
+    page.on("pageerror", lambda exc: errors.append(str(exc)))
+    page.set_viewport_size({"width": 1500, "height": 950})
+    page.goto(INDEX_URL)
+    page.wait_for_function("window.WB && WB.library && WB.library.ready")
+    page.evaluate("WB.library.ready")
+    return Ui(page), errors
 
 
 @pytest.fixture
 def fresh(page):
-    """The page as somebody finds it who was never here: nothing stored, no setting made."""
-    errors = []
-    page.on("pageerror", lambda exc: errors.append(str(exc)))
-    page.goto(INDEX_URL)
-    page.wait_for_function("window.WB && WB.library && WB.library.ready")
-    page.evaluate("WB.library.ready")
-    page.set_viewport_size({"width": 1500, "height": 950})
-    yield Ui(page)
+    """The page as somebody finds it who was never here: nothing stored, no setting made
+    (but for the tour, which test_a_first_visit_gets_a_tour is about)."""
+    page.add_init_script(NO_TOUR)
+    ui, errors = first_visit(page)
+    yield ui
+    assert not errors
+
+
+def test_a_first_visit_gets_a_tour(page):
+    page.emulate_media(reduced_motion="reduce")  # the lit part is where it goes, not on its way there
+    ui, errors = first_visit(page)
+    tour = ui.t("tour")
+    tour.wait_for()
+    assert "1 of 7" in ui.t("tour-count").inner_text() and "Welcome" in ui.t("tour-title").inner_text()
+    # the page under it cannot be used meanwhile
+    assert ui.page.evaluate("document.querySelector('[data-t=tour]').matches(':modal')")
+    # each stop lights its part of the page, with the card beside it and on screen
+    lit = {2: "add-blots", 6: "help"}
+    for n in range(2, 8):
+        ui.click("tour-next")
+        assert ui.t("tour-count").inner_text() == f"{n} of 7"
+        card = ui.rect(ui.t("tour-card"))
+        assert card["x"] >= 0 and card["y"] >= 0 and card["x"] + card["width"] <= 1500 and card["y"] + card["height"] <= 950
+        if n in lit:
+            spot, part = ui.rect(ui.t("tour-spot")), ui.rect(ui.t(lit[n]))
+            assert spot["x"] <= part["x"] and part["x"] + part["width"] <= spot["x"] + spot["width"]
+            assert spot["y"] <= part["y"] and part["y"] + part["height"] <= spot["y"] + spot["height"]
+    # the arrow keys go back and forth; the last stop offers the sample
+    ui.page.keyboard.press("ArrowLeft")
+    assert ui.t("tour-count").inner_text() == "6 of 7"
+    ui.page.keyboard.press("ArrowRight")
+    ui.click("tour-sample")
+    tour.wait_for(state="detached")
+    ui.flush()
+    assert ui.state("s.blots.length") == 1
+    # once is enough: not again after a reload
+    ui.page.reload()
+    ui.page.evaluate("WB.library.ready")
+    ui.flush()
+    assert ui.t("tour").count() == 0
+    # the help offers it again, and Esc or Skip closes it
+    ui.click("help")
+    ui.click("help-tour")
+    tour.wait_for()
+    assert ui.t("help-dialog").count() == 0 and "1 of 7" in ui.t("tour-count").inner_text()
+    ui.page.keyboard.press("Escape")
+    tour.wait_for(state="detached")
+    ui.click("help")
+    ui.click("help-tour")
+    ui.click("tour-skip")
+    tour.wait_for(state="detached")
     assert not errors
 
 

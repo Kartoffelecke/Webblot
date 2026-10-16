@@ -11,6 +11,7 @@ with sync_playwright() as p:
     page = browser.new_page(viewport={"width": 1600, "height": 1000})
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
+    page.add_init_script("localStorage.setItem('web_blot.tour', 'done')")
     page.goto((Path(__file__).resolve().parent.parent / "index.html").as_uri())
     page.locator("[data-t=add-files]").set_input_files([str(blot), str(blot), str(blot)])
     page.wait_for_function("WB.state.blots.length === 3")

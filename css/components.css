@@ -85,6 +85,19 @@ dialog.help dt { color: var(--text-2); }
 dialog.help dd { margin: 0; }
 dialog.help h3 { font-size: var(--text-s); text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-3); margin: var(--s4) 0 var(--s2); }
 
+/* the tour: the page dimmed but for the part being explained, and a card beside it */
+dialog.tour { position: fixed; inset: 0; width: 100vw; height: 100vh; max-width: none; max-height: none; margin: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; overflow: hidden; }
+dialog.tour::backdrop { background: transparent; }
+.tour-spot { position: absolute; border-radius: var(--radius); box-shadow: 0 0 0 200vmax rgba(10, 12, 16, 0.55); outline: 2px solid var(--accent); outline-offset: 0; transition: left 0.2s, top 0.2s, width 0.2s, height 0.2s; pointer-events: none; }
+dialog.tour.centred .tour-spot { left: 50%; top: 50%; width: 0; height: 0; outline: 0; }
+.tour-card { position: absolute; width: min(360px, calc(100vw - 32px)); padding: var(--s4) var(--s4) var(--s3); background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow-3); transition: left 0.2s, top 0.2s; }
+dialog.tour.centred .tour-card { left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(420px, calc(100vw - 32px)); }
+.tour-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s3); margin-bottom: var(--s2); }
+.tour-head h2 { font-size: var(--text-l); }
+.tour-count { color: var(--text-3); font-size: var(--text-s); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tour-card p { color: var(--text-2); line-height: 1.5; margin-bottom: var(--s4); }
+.tour-actions { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
+
 #toasts { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; align-items: center; z-index: 50; pointer-events: none; }
 .toast { pointer-events: auto; display: flex; align-items: center; gap: 12px; max-width: min(560px, 92vw); padding: 9px 10px 9px 14px; border-radius: var(--radius); background: var(--text); color: var(--bg); box-shadow: var(--shadow-2); white-space: pre-line; animation: toast-in 0.16s ease-out; }
 .toast.error { background: var(--danger); color: #fff; }

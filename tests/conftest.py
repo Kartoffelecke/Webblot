@@ -20,6 +20,9 @@ TO_IMAGE = "([w, h, data]) => ({ w, h, data: Float32Array.from(data) })"
 # the browser keeps; "*" is for all that were never touched.)
 ALL_SECTIONS_OPEN = """try { if (!localStorage.getItem("web_blot.sections")) localStorage.setItem("web_blot.sections", '{"*": true}'); } catch (e) {}"""
 
+# The tour of a first visit already seen, so that it does not stand over the page.
+NO_TOUR = """try { localStorage.setItem("web_blot.tour", "done"); } catch (e) {}"""
+
 
 @pytest.fixture
 def app(page):
@@ -28,6 +31,7 @@ def app(page):
     page.on("pageerror", lambda exc: errors.append(str(exc)))
     page.on("console", lambda msg: errors.append(msg.text) if msg.type == "error" else None)
     page.add_init_script(ALL_SECTIONS_OPEN)
+    page.add_init_script(NO_TOUR)
     page.goto(INDEX_URL)
     page.wait_for_function("window.WB && WB.quant")
     yield page
