@@ -3,19 +3,71 @@
 import re
 
 import pytest
-from conftest import INDEX_URL, Ui
+from conftest import INDEX_URL, NO_TOUR, Ui
+
+
+def first_visit(page):
+    errors = []
+    page.on("pageerror", lambda exc: errors.append(str(exc)))
+    page.set_viewport_size({"width": 1500, "height": 950})
+    page.goto(INDEX_URL)
+    page.wait_for_function("window.WB && WB.library && WB.library.ready")
+    page.evaluate("WB.library.ready")
+    return Ui(page), errors
 
 
 @pytest.fixture
 def fresh(page):
-    """The page as somebody finds it who was never here: nothing stored, no setting made."""
-    errors = []
-    page.on("pageerror", lambda exc: errors.append(str(exc)))
-    page.goto(INDEX_URL)
-    page.wait_for_function("window.WB && WB.library && WB.library.ready")
-    page.evaluate("WB.library.ready")
-    page.set_viewport_size({"width": 1500, "height": 950})
-    yield Ui(page)
+    """The page as somebody finds it who was never here: nothing stored, no setting made
+    (but for the tour, which test_a_first_visit_gets_a_tour is about)."""
+    page.add_init_script(NO_TOUR)
+    ui, errors = first_visit(page)
+    yield ui
+    assert not errors
+
+
+def test_a_first_visit_gets_a_tour(page):
+    page.emulate_media(reduced_motion="reduce")  # the lit part is where it goes, not on its way there
+    ui, errors = first_visit(page)
+    tour = ui.t("tour")
+    tour.wait_for()
+    assert "1 of 7" in ui.t("tour-count").inner_text() and "Welcome" in ui.t("tour-title").inner_text()
+    # the page under it cannot be used meanwhile
+    assert ui.page.evaluate("document.querySelector('[data-t=tour]').matches(':modal')")
+    # each stop lights its part of the page, with the card beside it and on screen
+    lit = {2: "add-blots", 6: "help"}
+    for n in range(2, 8):
+        ui.click("tour-next")
+        assert ui.t("tour-count").inner_text() == f"{n} of 7"
+        card = ui.rect(ui.t("tour-card"))
+        assert card["x"] >= 0 and card["y"] >= 0 and card["x"] + card["width"] <= 1500 and card["y"] + card["height"] <= 950
+        if n in lit:
+            spot, part = ui.rect(ui.t("tour-spot")), ui.rect(ui.t(lit[n]))
+            assert spot["x"] <= part["x"] and part["x"] + part["width"] <= spot["x"] + spot["width"]
+            assert spot["y"] <= part["y"] and part["y"] + part["height"] <= spot["y"] + spot["height"]
+    # the arrow keys go back and forth; the last stop offers the walkthrough
+    ui.page.keyboard.press("ArrowLeft")
+    assert ui.t("tour-count").inner_text() == "6 of 7"
+    ui.page.keyboard.press("ArrowRight")
+    assert ui.t("tour-walkthrough").is_visible()
+    ui.click("tour-done")
+    tour.wait_for(state="detached")
+    # once is enough: not again after a reload
+    ui.page.reload()
+    ui.page.evaluate("WB.library.ready")
+    ui.flush()
+    assert ui.t("tour").count() == 0
+    # the help offers it again, and Esc or Skip closes it
+    ui.click("help")
+    ui.click("help-tour")
+    tour.wait_for()
+    assert ui.t("help-dialog").count() == 0 and "1 of 7" in ui.t("tour-count").inner_text()
+    ui.page.keyboard.press("Escape")
+    tour.wait_for(state="detached")
+    ui.click("help")
+    ui.click("help-tour")
+    ui.click("tour-skip")
+    tour.wait_for(state="detached")
     assert not errors
 
 
@@ -205,3 +257,47 @@ def test_a_question_before_what_cannot_be_undone(ui, blot_files):
     ui.choose("copy-from", str(ui.state("s.blots[1].id")))
     ui.confirm()
     assert ui.state("b.session.lanes.length") == 0
+
+
+def test_the_walkthrough_takes_the_sample_through_every_step(ui, blot_files):
+    ui.page.emulate_media(reduced_motion="reduce")
+    # somebody's own work is open
+    ui.add_files(blot_files[0])
+    ui.saved()
+    assert ui.state("s.folder.dir") == "target"
+    ui.click("help")
+    ui.click("help-walkthrough")
+    tour = ui.t("tour")
+    tour.wait_for()
+    assert "1 of 10" in ui.t("tour-count").inner_text() and ui.t("tour-back").count() == 0
+    titles = []
+    while ui.t("tour-next").count():
+        ui.click("tour-next")
+        ui.page.wait_for_selector("[data-t=tour]:not(.busy)")
+        titles.append(ui.t("tour-title").inner_text())
+        # what is lit is on screen
+        if ui.t("tour-spot").count():
+            spot = ui.rect(ui.t("tour-spot"))
+            assert spot["width"] > 0 and spot["x"] >= 0 and spot["y"] >= 0, titles[-1]
+    assert len(titles) == 9 and titles[-1] == "That's all"
+    # in a folder of its own: the sample cropped, its lanes and bands, a labelled figure
+    assert ui.state("s.folder.dir") == "Tutorial" and ui.state("s.blots.length") == 1
+    assert ui.state("b.session.transform.crop") == [30, 20, 390, 620]
+    assert ui.state("b.session.lanes.map((l) => l.peaks.length)") == [3] * 8
+    assert ui.state("b.session.figure.label_rows[0].values") == ["Control"] * 4 + ["Treated"] * 4
+    assert ui.state("[b.session.figure.mw_markers.length, b.session.figure.band_markers.length]") == [6, 3]
+    assert "Treated" in ui.state("WB.figurepanel.build().svg")
+    # deleted at the end: back to what was open before
+    ui.click("walk-delete")
+    tour.wait_for(state="detached")
+    ui.page.wait_for_function("WB.state.folder.dir === 'target'")
+    ui.flush()
+    assert [f[0] for f in ui.page.evaluate("WB.library.folders.map((f) => [f.name])")] == ["target"]
+    # stopped half way, it says where its folder is
+    ui.click("help")
+    ui.click("help-walkthrough")
+    ui.click("tour-next")
+    ui.page.wait_for_selector("[data-t=tour]:not(.busy)")
+    ui.click("tour-skip")
+    tour.wait_for(state="detached")
+    assert "Tutorial" in ui.t("toast").inner_text()

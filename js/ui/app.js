@@ -132,6 +132,10 @@
     const key = (...names) => names.map((n, i) => [i ? " + " : "", dom.el("kbd", {}, n)]);
     const dialog = dom.el("dialog", { class: "help", "data-t": "help-dialog" },
       dom.el("div", { class: "dialog-head" }, dom.el("h2", {}, "Mouse and keys"),
+        dom.el("span", { class: "spacer" }),
+        dom.button("Tour of the page", "help-tour", () => { dialog.close(); WB.tour.start(); }, "What is where on the page."),
+        dom.button("Walk through an analysis", "help-walkthrough", () => { dialog.close(); WB.tour.walkthrough(); },
+          "The sample blot taken through all four steps, in a folder of its own."),
         dom.icon("close", "help-close", () => dialog.close(), "Close", "quiet")),
       dom.el("div", { class: "dialog-body" },
         dom.el("h3", {}, "Everywhere"),
@@ -318,6 +322,7 @@
     "WB.quantify": "js/ui/quantify.js",
     "WB.figurepanel": "js/ui/figurepanel.js",
     "WB.library": "js/ui/library.js",
+    "WB.tour": "js/ui/tour.js",
   };
 
   // A script that did not load (a missing file, or one refused by a content
@@ -395,6 +400,8 @@
     app.changed("blots", "panel");
     app.flush();
     library.ready = library.start();
+    // a first visit gets the tour, once the folder that was open is there again
+    library.ready.then(WB.tour.offer, WB.tour.offer);
   }
 
   start();
