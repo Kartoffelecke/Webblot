@@ -3,14 +3,14 @@
 import re
 
 import pytest
-from conftest import INDEX_URL, Ui
+from conftest import Ui, open_page
 
 
 def first_visit(page):
     errors = []
     page.on("pageerror", lambda exc: errors.append(str(exc)))
     page.set_viewport_size({"width": 1500, "height": 950})
-    page.goto(INDEX_URL)
+    open_page(page)
     page.wait_for_function("window.WB && WB.library && WB.library.ready")
     page.evaluate("WB.library.ready")
     return Ui(page), errors
