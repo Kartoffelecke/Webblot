@@ -3,7 +3,7 @@
 import re
 
 import pytest
-from conftest import INDEX_URL, NO_TOUR, Ui
+from conftest import INDEX_URL, Ui
 
 
 def first_visit(page):
@@ -18,10 +18,12 @@ def first_visit(page):
 
 @pytest.fixture
 def fresh(page):
-    """The page as somebody finds it who was never here: nothing stored, no setting made
-    (but for the tour, which test_a_first_visit_gets_a_tour is about)."""
-    page.add_init_script(NO_TOUR)
+    """The page as somebody finds it who was never here: nothing stored, no setting made.
+    The tour of a first visit (test_a_first_visit_gets_a_tour) is skipped, as such a visitor would."""
     ui, errors = first_visit(page)
+    ui.t("tour").wait_for()
+    ui.click("tour-skip")
+    ui.t("tour").wait_for(state="detached")
     yield ui
     assert not errors
 
@@ -278,7 +280,7 @@ def test_the_walkthrough_takes_the_sample_through_every_step(ui, blot_files):
         # what is lit is on screen
         if ui.t("tour-spot").count():
             spot = ui.rect(ui.t("tour-spot"))
-            assert spot["width"] > 0 and spot["x"] >= 0 and spot["y"] >= 0, titles[-1]
+            assert spot["width"] > 0 and spot["x"] > -0.5 and spot["y"] > -0.5, titles[-1]  # (rounding: -1e-13 in WebKit)
     assert len(titles) == 9 and titles[-1] == "That's all"
     # in a folder of its own: the sample cropped, its lanes and bands, a labelled figure
     assert ui.state("s.folder.dir") == "Tutorial" and ui.state("s.blots.length") == 1

@@ -21,7 +21,9 @@ TO_IMAGE = "([w, h, data]) => ({ w, h, data: Float32Array.from(data) })"
 ALL_SECTIONS_OPEN = """try { if (!localStorage.getItem("web_blot.sections")) localStorage.setItem("web_blot.sections", '{"*": true}'); } catch (e) {}"""
 
 # The tour of a first visit already seen, so that it does not stand over the page.
-NO_TOUR = """try { localStorage.setItem("web_blot.tour", "done"); } catch (e) {}"""
+# (Written only when missing: a write while a page reloads can make Chromium
+# lose what the page before wrote just then.)
+NO_TOUR = """try { if (!localStorage.getItem("web_blot.tour")) localStorage.setItem("web_blot.tour", "done"); } catch (e) {}"""
 
 
 @pytest.fixture

@@ -310,6 +310,9 @@ def test_backgrounds_are_edited_in_the_plots(quantified):
     page.mouse.dblclick(*ui.on_plot(1, 30, 9000))
     ui.flush()
     assert len(ui.state("b.session.lanes[1].baseline.anchors")) == 9
+    # a pause, as a person makes: two double-clicks in a row at one place count as one
+    # series of four clicks in WebKit, and the second pair is no double-click then
+    page.wait_for_timeout(800)
     page.mouse.dblclick(*ui.on_plot(1, 30, 9000))
     page.keyboard.up("Shift")
     ui.flush()
