@@ -12,14 +12,14 @@ import zipfile
 import numpy as np
 import pytest
 import tifffile
-from conftest import ALL_SECTIONS_OPEN, INDEX_URL, NO_TOUR, ROOT, Ui
+from conftest import ALL_SECTIONS_OPEN, INDEX_URL, NO_TOUR, ROOT, Ui, open_page
 
 
 def started(page, url=INDEX_URL, expect_error=False):
     """A page of the application, once it has opened what is in the work folder."""
     page.add_init_script(ALL_SECTIONS_OPEN)
     page.add_init_script(NO_TOUR)
-    page.goto(url)
+    open_page(page, url)
     page.wait_for_function("window.WB && WB.library && WB.library.ready")
     page.evaluate("WB.library.ready")
     page.set_viewport_size({"width": 1500, "height": 950})

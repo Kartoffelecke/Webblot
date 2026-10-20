@@ -12,6 +12,31 @@ REAL_BLOT = DATA / "chemidoc_lc3.tif"
 
 INDEX_URL = (ROOT / "index.html").as_uri()
 
+def shares_storage(page):
+    """Whether what this page puts in localStorage reaches the other pages, and a page
+    after a reload. Now and then Chromium opens a page from a file with a localStorage
+    of its own that reaches nothing: its settings are gone after a reload."""
+    if page.context.browser.browser_type.name != "chromium":
+        return True
+    mark = page.evaluate("(() => { const m = String(Math.random()); localStorage.setItem('web_blot.test-mark', m); return m; })()")
+    other = page.context.new_page()
+    try:
+        other.goto(page.url.rsplit("/", 1)[0] + "/css/base.css")  # beside the page: the same localStorage
+        return other.evaluate("localStorage.getItem('web_blot.test-mark')") == mark
+    finally:
+        other.close()
+        page.evaluate("localStorage.removeItem('web_blot.test-mark')")
+
+
+def open_page(page, url=INDEX_URL):
+    """Open the page at `url`, again if its localStorage reaches nothing (see shares_storage)."""
+    for attempt in range(5):
+        page.goto(url)
+        page.wait_for_function("window.WB && WB.quant")
+        if shares_storage(page):
+            return attempt
+    raise AssertionError("Chromium gave the page a localStorage of its own five times")
+
 # Passing arrays to the page: images travel as flat lists.
 TO_IMAGE = "([w, h, data]) => ({ w, h, data: Float32Array.from(data) })"
 
@@ -21,7 +46,9 @@ TO_IMAGE = "([w, h, data]) => ({ w, h, data: Float32Array.from(data) })"
 ALL_SECTIONS_OPEN = """try { if (!localStorage.getItem("web_blot.sections")) localStorage.setItem("web_blot.sections", '{"*": true}'); } catch (e) {}"""
 
 # The tour of a first visit already seen, so that it does not stand over the page.
-NO_TOUR = """try { localStorage.setItem("web_blot.tour", "done"); } catch (e) {}"""
+# (Written only when missing: a write while a page reloads can make Chromium
+# lose what the page before wrote just then.)
+NO_TOUR = """try { if (!localStorage.getItem("web_blot.tour")) localStorage.setItem("web_blot.tour", "done"); } catch (e) {}"""
 
 
 @pytest.fixture
@@ -32,8 +59,7 @@ def app(page):
     page.on("console", lambda msg: errors.append(msg.text) if msg.type == "error" else None)
     page.add_init_script(ALL_SECTIONS_OPEN)
     page.add_init_script(NO_TOUR)
-    page.goto(INDEX_URL)
-    page.wait_for_function("window.WB && WB.quant")
+    open_page(page)
     yield page
     assert not errors, f"JavaScript errors: {errors}"
 

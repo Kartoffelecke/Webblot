@@ -133,8 +133,8 @@
     const dialog = dom.el("dialog", { class: "help", "data-t": "help-dialog" },
       dom.el("div", { class: "dialog-head" }, dom.el("h2", {}, "Mouse and keys"),
         dom.el("span", { class: "spacer" }),
-        dom.button("Tour of the page", "help-tour", () => { dialog.close(); WB.tour.start(); }, "What is where on the page."),
-        dom.button("Walk through an analysis", "help-walkthrough", () => { dialog.close(); WB.tour.walkthrough(); },
+        dom.button("Tour of the page", "help-tour", () => { closeNow(); WB.tour.start(); }, "What is where on the page."),
+        dom.button("Walk through an analysis", "help-walkthrough", () => { closeNow(); WB.tour.walkthrough(); },
           "The sample blot taken through all four steps, in a folder of its own."),
         dom.icon("close", "help-close", () => dialog.close(), "Close", "quiet")),
       dom.el("div", { class: "dialog-body" },
@@ -167,6 +167,11 @@
           row("Next row", [key("Enter"), " or ", key("↓")]),
           row("Fill from a spreadsheet", "Copy the cells there and paste them into the first cell here"))));
     dialog.addEventListener("close", () => dialog.remove());
+    // closed for a tour: gone at once, not only once the close event comes
+    const closeNow = () => {
+      dialog.close();
+      dialog.remove();
+    };
     document.body.append(dialog);
     dialog.showModal();
   }
