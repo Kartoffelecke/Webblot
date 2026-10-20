@@ -27,12 +27,12 @@
   const PAGE = [
     {
       title: "Welcome to web_blot",
-      text: "Analyse western blots and gels in the browser: prepare the images, mark the lanes, measure the bands and build a labelled figure. Your images never leave this computer.",
+      text: "Quantify Western Blots and create publication-ready figures. Everything runs locally and your images never leave this computer.",
     },
     {
       parts: ["[data-t=add-sample]", "[data-t=add-blots]"],
       title: "Add your blots",
-      text: "Open 16-bit TIFF, PNG or JPEG images, or drop them anywhere on the page. Each image becomes a blot. Sample adds a made-up blot to try things on.",
+      text: "Open 16-bit TIFF, PNG or JPEG images, or drop them anywhere on the page. Each image becomes a blot.",
     },
     {
       parts: [".stepper"],
@@ -42,12 +42,12 @@
     {
       parts: ["#tree"],
       title: "Folders",
-      text: "One folder per experiment, with its blots and figures. Everything is saved as you work, in the browser or, in Chrome and Edge, in a folder on your computer.",
+      text: "Your experiments are organized in folders. Each folder should contain all blots belonging to one experiment. On Chrome and Edge, the folder can be located on your disk directly. On other browsers, they live in the browser storage and should be downloaded occasionally.",
     },
     {
       parts: ["[data-t=save-status]", "[data-t=save-project]"],
-      title: "Saved, and taken along",
-      text: "Here you see whether everything is saved. Download folder gives a zip file: keep it as a copy, or open it on another computer with Open file… in the folder panel.",
+      title: "Download a backup",
+      text: "Download folder gives a zip file: keep it as a copy, or open it on another computer with Open file… in the folder panel.",
     },
     {
       parts: ["[data-t=help]"],
@@ -91,7 +91,7 @@
     {
       parts: ["[data-t=card]"],
       title: "1 · Prepare: the blot",
-      text: "The sample: eight lanes with three bands each. A brightfield image of the membrane, with the ladder in the first lane, is merged into the display; it is shown, never measured. The sliders under the image change only how the blot is shown.",
+      text: "The sample blot has a brightfield image already merged. You can adjust the brightness with the sliders below.",
       enter: async () => {
         walk.before = state.folder.dir;
         if (tree.store.kind !== "none") {
@@ -107,7 +107,7 @@
     {
       parts: ["[data-t=card]", "[data-t=tool-crop]"],
       title: "Crop",
-      text: "Draw crop, then drag a rectangle around what to keep: here the bands and the ladder, without the empty edges. The rectangle can still be moved and resized; nothing is cut yet.",
+      text: "You can crop parts of the image or create a new blot from the selection.",
       enter: () => {
         blot().pending.crop = CROP;
         app.changed("panel", "tool");
@@ -116,13 +116,13 @@
     {
       parts: ["[data-t=card]", "[data-t=crop-apply]"],
       title: "Apply crop",
-      text: "Apply crop keeps the area. The image file stays whole: the crop can be undone or changed later, and lanes drawn before it stay on the same pixels.",
+      text: "Apply crop keeps the area. The image file stays whole: the crop can be undone or changed later.",
       enter: () => press("crop-apply"),
     },
     {
       parts: ["[data-t=card]", "[data-t=detect-lanes]"],
       title: "2 · Lanes",
-      text: "Detect lanes finds the lanes from the signal; give their number if you know it, or draw the area of the gel first. Then drag a lane to move it; its handles change length, width and tilt.",
+      text: "Detect lanes finds the lanes from the signal or distributes them equally. You can move, resize and tilt individual lanes",
       enter: () => {
         app.setStep("lanes");
         press("detect-lanes");
@@ -130,8 +130,8 @@
     },
     {
       parts: ["#lower"],
-      title: "3 · Quantify: a plot per lane",
-      text: "Each lane's profile, the mean intensity across its width, with the background below it (orange). Detect in all lanes found the bands as peaks: drag a peak's border, double-click a band to add one, right-click to remove one.",
+      title: "3 · Quantify",
+      text: "For each lane, the average intensity across its width is plotted below. The background is estimated using a rolling-ball method (default) but can also be set as a straight line or to connect the valleys of each peak.",
       enter: () => {
         app.setStep("quantify");
         press("detect-all");
@@ -139,13 +139,13 @@
     },
     {
       parts: ["[data-t=results]", "[data-t=results-csv]"],
-      title: "The numbers",
-      text: "The area of every peak above the background, lanes by peaks. Normalize relates each band to its largest lane; Copy and Download CSV take the table to a spreadsheet.",
+      title: "Quantification results",
+      text: "You can copy the quantification results to the clipboard or download them as a CSV. Peaks are enumerated up-to-down for each lane.",
     },
     {
       parts: ["#lower"],
       title: "4 · Figure",
-      text: "The blot as a figure panel: lane labels above it (neighbours with the same label merged into one), molecular weights from the ladder at the left, the bands named at the right. All of it is set in the panel at the right; markers can be dragged on the blot.",
+      text: "In this step you can prepare a multi-blot figure, with labeling, cropping and addition of protein and MW markers",
       enter: () => {
         app.setStep("figure");
         const b = blot();
@@ -162,7 +162,7 @@
     {
       parts: ["[data-t=export-svg]", "[data-t=export-png]", "[data-t=export-print]"],
       title: "Export",
-      text: "SVG keeps the gel's own pixels and editable text, for Illustrator or Inkscape; PNG is a picture; Print / PDF goes through the print dialog.",
+      text: "Here you can export the image (I'd recommend SVG)",
     },
     {
       parts: ["#tree"],
