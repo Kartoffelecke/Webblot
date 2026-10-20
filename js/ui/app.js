@@ -150,6 +150,7 @@
           row("Zoom", [key("Ctrl"), " or ", key("⌘"), " + wheel, or pinch"]),
           row("Move a zoomed blot", "Wheel, or drag the image"),
           row("Move a lane", "Drag it; its handles change length, width and tilt"),
+          row("Move by one pixel", [key("←"), " ", key("→"), " ", key("↑"), " ", key("↓"), " move what was grabbed last (else the current lane, the crop or figure area); with ", key("Shift"), " 10 pixels"]),
           row("Remove the current lane", [key("Delete"), " on the Lanes step"]),
           row("Move a marker", "Drag it up or down, anywhere along its line")),
         dom.el("h3", {}, "In a lane plot"),

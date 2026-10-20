@@ -2010,3 +2010,76 @@ def test_straightening_keeps_the_crop(ui, tmp_path):
     back = ui.state("WB.processing.fromRotated(500, 300, 7.5, WB.processing.toRotated(500, 300, 7.5, [100, 300]))")
     assert back == pytest.approx([100, 300], abs=1e-9)
     assert ui.state("(() => { const s = WB.processing.rotatedSize(500, 300, 7.5), r = WB.processing.rotate({ w: 500, h: 300, data: new Float32Array(150000) }, 7.5); return [s.w === r.w, s.h === r.h]; })()") == [True, True]
+
+
+def test_arrow_keys_move_what_was_grabbed(ui, blot_files):
+    page = ui.page
+    ui.add_files(blot_files[0])
+    blur = lambda: page.evaluate("document.activeElement.blur()")
+    # a drawn crop rectangle: 1 px a press, 10 with Shift
+    ui.click("tool-crop")
+    ui.flush()
+    ui.drag_on_card(0, (20, 30), (300, 400))
+    crop = ui.state("b.pending.crop")
+    blur()
+    page.keyboard.press("ArrowRight")
+    page.keyboard.press("Shift+ArrowDown")
+    ui.flush()
+    assert ui.state("b.pending.crop") == pytest.approx([crop[0] + 10, crop[1] + 1, crop[2] + 10, crop[3] + 1])
+    ui.click("crop-discard")
+
+    # lanes: the current one, also when chosen in the panel
+    ui.tab("lanes")
+    ui.set("lane-count", 8)
+    ui.click("detect-lanes")
+    ui.flush()
+    lane = ui.state("b.session.lanes[2]")
+    ui.state("(WB.app.select(b.id, 2), 0)")
+    ui.flush()
+    blur()
+    page.keyboard.press("ArrowLeft")
+    page.keyboard.press("ArrowUp")
+    ui.flush()
+    moved = ui.state("b.session.lanes[2]")
+    assert [moved["x_center"], moved["y0"], moved["y1"]] == pytest.approx([lane["x_center"] - 1, lane["y0"] - 1, lane["y1"] - 1])
+    # not while typing in a field
+    ui.t("lane-count").focus()
+    page.keyboard.press("ArrowLeft")
+    assert ui.state("b.session.lanes[2].x_center") == pytest.approx(moved["x_center"])
+    blur()
+
+    # the background area once drawn, and the background follows it
+    ui.tab("quantify")
+    ui.click("detect-all")
+    ui.choose("bg-method", "linear")
+    ui.click("tool-bg-area")
+    ui.flush()
+    ui.drag_on_card(0, (100, 5), (180, 30))
+    box, level = ui.state("b.bgArea"), ui.state("WB.app.backgroundLevel(b)")
+    blur()
+    page.keyboard.press("Shift+ArrowDown")
+    ui.flush()
+    assert ui.state("b.bgArea") == pytest.approx([box[0] + 10, box[1], box[2] + 10, box[3]])
+    assert ui.state("WB.app.backgroundLevel(b)") != level
+    assert ui.state("b.session.lanes[2].x_center") == pytest.approx(moved["x_center"])
+    # choosing a lane gives the keys back to the lanes
+    ui.state("(WB.app.select(b.id, 3), 0)")
+    ui.flush()
+    x3 = ui.state("b.session.lanes[3].x_center")
+    page.keyboard.press("ArrowRight")
+    ui.flush()
+    assert ui.state("b.session.lanes[3].x_center") == pytest.approx(x3 + 1) and ui.state("b.bgArea") == pytest.approx([box[0] + 10, box[1], box[2] + 10, box[3]])
+
+    # markers: grabbed, up and down only
+    ui.tab("figure")
+    ui.set("mw-count", 2)
+    ui.click("mw-place")
+    ui.flush()
+    y = ui.state("b.session.figure.mw_markers[0].y")
+    ui.drag_on_card(0, (y, 300), (y + 20, 300))
+    y = ui.state("b.session.figure.mw_markers[0].y")
+    blur()
+    page.keyboard.press("ArrowDown")
+    page.keyboard.press("ArrowRight")
+    ui.flush()
+    assert ui.state("b.session.figure.mw_markers[0].y") == pytest.approx(y + 1)

@@ -168,11 +168,105 @@
   }
   workspace.figureBox = figureBox;
 
+  // ------------------------------------------------------------ arrow keys
+
+  // The arrow keys move what was grabbed last on the selected blot, or else
+  // what the step works on: the crop rectangle (or the line to straighten),
+  // the current lane, the figure area.
+  let grabbed = null; // { blotId, kind, ref, lane }: kind as the data-t of the shape
+  const grab = (blot, kind, ref = null) => {
+    grabbed = { blotId: blot.id, kind, ref, lane: state.lane };
+  };
+
+  // What on `blot` can be moved by keys in the step that is open:
+  // [{ kind, ref, move(dy, dx), done() }]
+  function movables(blot) {
+    const out = [];
+    const shift = (box, dy, dx) => [box[0] + dy, box[1] + dx, box[2] + dy, box[3] + dx];
+    const fig = blot.session.figure;
+    if (state.tab === "prepare") {
+      const pending = blot.pending;
+      if (pending.crop)
+        out.push({ kind: "crop-shape", move: (dy, dx) => (pending.crop = shift(pending.crop, dy, dx)), done: () => app.changed("tool") });
+      if (pending.level)
+        out.push({
+          kind: "level-shape",
+          move: (dy, dx) => (pending.level = pending.level.map(([y, x]) => [y + dy, x + dx])),
+          done: () => app.changed("tool"),
+        });
+    }
+    if (state.tab === "lanes" || state.tab === "quantify") {
+      for (const lane of blot.session.lanes)
+        out.push({
+          kind: "lane", ref: lane,
+          move: (dy, dx) => {
+            lane.x_center += dx;
+            lane.y0 += dy;
+            lane.y1 += dy;
+          },
+          done: () => {
+            app.sortLanes(blot);
+            app.changed("lanes");
+          },
+        });
+    }
+    if (state.tab === "quantify" && blot.bgArea)
+      out.push({ kind: "bg-area", move: (dy, dx) => (blot.bgArea = shift(blot.bgArea, dy, dx)), done: () => app.setBackgroundArea(blot, blot.bgArea) });
+    if (state.tab === "figure") {
+      if (fig.crop && fig.crop_on)
+        out.push({ kind: "figure-area", move: (dy, dx) => (fig.crop = shift(fig.crop, dy, dx)), done: () => app.changed("figure") });
+      for (const [list, kind] of [[fig.mw_markers, "mw-marker"], [fig.band_markers, "band-marker"]])
+        for (const m of list)
+          out.push({
+            kind, ref: m,
+            move: (dy) => (m.y += dy), // only the height of a marker counts
+            done: () => {
+              list.sort((a, b) => a.y - b.y);
+              app.changed("figure", "panel");
+            },
+          });
+    }
+    return out;
+  }
+
+  // The one the arrow keys move on `blot`, or null.
+  function keyTarget(blot) {
+    const all = movables(blot);
+    // what was grabbed, unless another lane was chosen since
+    if (grabbed && grabbed.blotId === blot.id && (grabbed.kind === "lane" || grabbed.lane === state.lane)) {
+      const found = all.find((m) => m.kind === grabbed.kind && (grabbed.ref === null || m.ref === grabbed.ref));
+      if (found && (found.kind !== "lane" || found.ref === blot.session.lanes[state.lane])) return found;
+    }
+    const lane = blot.session.lanes[state.lane];
+    return all.find((m) => m.kind === "lane" && m.ref === lane)
+      || all.find((m) => m.kind === "crop-shape" || m.kind === "level-shape" || m.kind === "figure-area")
+      || null;
+  }
+
+  const ARROWS = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] };
+
+  // 1 image pixel a press, 10 with Shift
+  document.addEventListener("keydown", (ev) => {
+    const arrow = ARROWS[ev.key];
+    if (!arrow || ev.ctrlKey || ev.metaKey || ev.altKey || state.tool) return;
+    if (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName) || document.querySelector("dialog[open]")) return;
+    const blot = app.blot();
+    const target = blot && !state.hideBlots ? keyTarget(blot) : null;
+    if (!target) return;
+    const step = ev.shiftKey ? 10 : 1;
+    const [dy, dx] = [arrow[0] * step, arrow[1] * step];
+    if (target.kind.endsWith("-marker") && !dy) return;
+    ev.preventDefault();
+    target.move(dy, dx);
+    target.done();
+  });
+
   function drawOverlay(blot, svg) {
     const { w } = blot.work.wb;
     svg.replaceChildren();
     const px = w / blot.view.zoom / state.cardWidth; // image pixels per screen pixel
     const isSelected = blot.id === state.selected;
+    const keyed = isSelected ? keyTarget(blot) : null; // what the arrow keys move
     const add = (tag, attrs, ...kids) => {
       const node = dom.svg(tag, { "vector-effect": "non-scaling-stroke", ...attrs }, ...kids);
       svg.append(node);
@@ -196,11 +290,12 @@
       const [y0, x0, y1, x1] = get();
       add("rect", {
         x: Math.min(x0, x1), y: Math.min(y0, y1), width: Math.abs(x1 - x0), height: Math.abs(y1 - y0),
-        class: "shape", "data-t": t, stroke: color, "stroke-width": 2, "stroke-dasharray": dash,
+        class: "shape", "data-t": t, stroke: color, "stroke-width": keyed && keyed.kind === t ? 3.5 : 2, "stroke-dasharray": dash,
         style: "cursor:move",
         onpointerdown: (ev) => {
           if (state.tool) return;
           app.select(blot.id);
+          grab(blot, t);
           const origin = get().slice();
           workspace.drag(ev, svg, ([y, x], [sy, sx]) => {
             set([origin[0] + y - sy, origin[1] + x - sx, origin[2] + y - sy, origin[3] + x - sx]);
@@ -211,6 +306,7 @@
       [[0, 1], [0, 3], [2, 1], [2, 3]].forEach(([yi, xi]) =>
         handle(get()[yi], get()[xi], `${t}-corner`, "nwse-resize", (ev) => {
           app.select(blot.id);
+          grab(blot, t);
           workspace.drag(ev, svg, ([y, x]) => {
             const box = get().slice();
             box[yi] = y;
@@ -249,6 +345,7 @@
         onpointerdown: (ev) => {
           if (state.tool) return;
           app.select(blot.id, i);
+          grab(blot, "lane", lane);
           const origin = { x: lane.x_center, y0: lane.y0, y1: lane.y1 };
           workspace.drag(
             ev, svg,
@@ -293,22 +390,26 @@
         const knob = lanes.point(lane, -18 * px);
         add("line", { x1: top[1], y1: top[0], x2: knob[1], y2: knob[0], stroke: COLORS.current, class: "note" });
         const finish = () => app.changed("lanes");
-        handle(top[0], top[1], "handle-lane-top", "ns-resize", (ev) =>
+        const laneHandle = (y, x, t, cursor, onDown) => handle(y, x, t, cursor, (ev) => {
+          grab(blot, "lane", lane);
+          onDown(ev);
+        });
+        laneHandle(top[0], top[1], "handle-lane-top", "ns-resize", (ev) =>
           workspace.drag(ev, svg, ([y]) => {
             app.setLaneTop(lane, Math.min(y, lane.y1 - 4));
             redraw();
           }, finish));
-        handle(bottom[0], bottom[1], "handle-lane-bottom", "ns-resize", (ev) =>
+        laneHandle(bottom[0], bottom[1], "handle-lane-bottom", "ns-resize", (ev) =>
           workspace.drag(ev, svg, ([y]) => {
             lane.y1 = Math.max(y, lane.y0 + 4);
             redraw();
           }, finish));
-        handle(right[0], right[1], "handle-lane-width", "ew-resize", (ev) =>
+        laneHandle(right[0], right[1], "handle-lane-width", "ew-resize", (ev) =>
           workspace.drag(ev, svg, ([, x]) => {
             lane.width = Math.max(2 * Math.abs(x - lane.x_center), 2);
             redraw();
           }, finish));
-        handle(knob[0], knob[1], "handle-lane-tilt", "grab", (ev) =>
+        laneHandle(knob[0], knob[1], "handle-lane-tilt", "grab", (ev) =>
           workspace.drag(ev, svg, ([y, x]) => {
             // the knob sits above the lane: tilt follows the line from it to the centre
             const angle = (Math.atan2(lane.x_center - x, lanes.yCenter(lane) - y) * 180) / Math.PI;
@@ -364,7 +465,7 @@
           });
           add("line", {
             x1: edge, y1: m.y, x2: edge + dir * 16 * px, y2: m.y, class: "note", "data-t": `${t}-tick`,
-            stroke: color, "stroke-width": 3, opacity,
+            stroke: color, "stroke-width": keyed && keyed.ref === m ? 6 : 3, opacity,
           });
           add("text", {
             x: edge + dir * 20 * px, y: m.y - 4 * px, "font-size": 12 * px, fill: color, opacity,
@@ -377,6 +478,7 @@
             onpointerdown: (ev) => {
               if (state.tool) return;
               app.select(blot.id);
+              grab(blot, t, m);
               workspace.drag(ev, svg, ([y]) => {
                 m.y = y;
                 redraw();
@@ -406,11 +508,12 @@
         const [[ya, xa], [yb, xb]] = pending.level;
         add("line", {
           x1: xa, y1: ya, x2: xb, y2: yb, class: "note", "data-t": "level-shape",
-          stroke: COLORS.draw, "stroke-width": 2,
+          stroke: COLORS.draw, "stroke-width": keyed && keyed.kind === "level-shape" ? 3.5 : 2,
         });
         [0, 1].forEach((end) =>
           handle(pending.level[end][0], pending.level[end][1], "level-end", "move", (ev) => {
             app.select(blot.id);
+            grab(blot, "level-shape");
             workspace.drag(ev, svg, (point) => {
               pending.level[end] = point;
               redraw();
@@ -458,13 +561,16 @@
   workspace.finishTool = function (tool, blot, box, line) {
     if (tool === "crop") {
       blot.pending.crop = box;
+      grab(blot, "crop-shape");
     } else if (tool === "level") {
       blot.pending.level = line;
+      grab(blot, "level-shape");
     } else if (tool === "roi") {
       blot.roi = box;
       app.changed("lanes");
     } else if (tool === "bgarea") {
       app.setBackgroundArea(blot, box);
+      grab(blot, "bg-area");
     }
   };
 

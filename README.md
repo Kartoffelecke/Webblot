@@ -56,7 +56,9 @@ steps in a folder of its own.
    markers. A folder can have several figures. Export as SVG (the gel's own
    pixels, editable text), PNG, or PDF through Print.
 
-On a blot: Ctrl / ⌘ + wheel zooms, drag a card by its handle to reorder.
+On a blot: Ctrl / ⌘ + wheel zooms, drag a card by its handle to reorder. The
+arrow keys move what was grabbed last (a lane, the crop, background or figure
+area, a marker) by one pixel, with Shift by ten.
 Removing a blot or lane can be undone from the message at the bottom.
 
 ## Background
