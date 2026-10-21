@@ -26,7 +26,7 @@
 
   const PAGE = [
     {
-      title: "Welcome to web_blot",
+      title: "Welcome to webblot",
       text: "Quantify Western Blots and create publication-ready figures. Everything runs locally and your images never leave this computer.",
     },
     {

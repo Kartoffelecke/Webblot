@@ -1,7 +1,7 @@
 [project]
-name = "web-blot-tests"
+name = "webblot-tests"
 version = "0"
-description = "Browser tests for web_blot"
+description = "Browser tests for webblot"
 requires-python = ">=3.12"
 dependencies = ["pytest", "pytest-playwright", "numpy", "tifffile"]
 

@@ -65,7 +65,7 @@
       theme.replaceChildren(WB.icon(WBTheme.toggle() === "dark" ? "sun" : "moon"));
     }, "Light or dark", "quiet");
     return dom.el("header", { class: "topbar" },
-      dom.el("span", { class: "brand" }, dom.el("span", { class: "brand-mark" }, dom.el("i", {})), "web_blot"),
+      dom.el("span", { class: "brand" }, dom.el("span", { class: "brand-mark" }, dom.el("i", {})), "webblot"),
       nameField,
       library.statusPart(),
       dom.el("span", { class: "spacer" }),
@@ -350,7 +350,7 @@
         return node;
       };
       const box = el("div", "", [
-        el("h1", "web_blot could not start"),
+        el("h1", "webblot could not start"),
         el("p", "These files were not loaded:"),
         el("ul", "", missing.map((file) => el("li", file))),
         el("p", "If the files exist, a content or ad blocker is probably refusing them. Switch it off for this page and reload."),

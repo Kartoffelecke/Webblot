@@ -61,7 +61,7 @@
       bfOrigin: was(o.bfOrigin),
     };
     const doc = {
-      app: "web_blot", kind: "blot", version: VERSION,
+      app: "webblot", kind: "blot", version: VERSION,
       name: blot.name,
       transform: blot.session.transform,
       lanes: blot.session.lanes,
@@ -84,20 +84,20 @@
       if (!p || !(p.include || p.crop) || !blot.disk) continue;
       panels.push({ blot: blot.disk.dir, shown: p.include, area: p.crop, area_on: p.crop_on, show_brightfield: p.show_bf, lane_labels: p.labels });
     }
-    return { app: "web_blot", kind: "figure", version: VERSION, name: figure.name, panels, style: figure.style };
+    return { app: "webblot", kind: "figure", version: VERSION, name: figure.name, panels, style: figure.style };
   }
 
   const folderDoc = () => ({
-    app: "web_blot", kind: "folder", version: VERSION,
+    app: "webblot", kind: "folder", version: VERSION,
     order: state.blots.filter((b) => b.disk).map((b) => b.disk.dir),
     figure: app.figure() ? app.figure().dir : null,
     normalize: state.normalize,
   });
 
   function check(doc, kind) {
-    if (!doc || doc.app !== "web_blot" || doc.kind !== kind) throw new Error(`not a web_blot ${kind}`);
+    if (!doc || (doc.app !== "webblot" && doc.app !== "web_blot") || doc.kind !== kind) throw new Error(`not a webblot ${kind}`);
     // a later version gets a conversion here; none is needed yet
-    if (!(doc.version <= VERSION)) throw new Error("written by a newer version of web_blot");
+    if (!(doc.version <= VERSION)) throw new Error("written by a newer version of webblot");
     return doc;
   }
 
@@ -175,7 +175,7 @@
     const entries = (await store.list([dir])).filter((e) => e.kind === "dir");
     let folder = {};
     try {
-      folder = check(JSON.parse((await tree.readText([dir, "folder.json"])) || "null") || { app: "web_blot", kind: "folder", version: VERSION }, "folder");
+      folder = check(JSON.parse((await tree.readText([dir, "folder.json"])) || "null") || { app: "webblot", kind: "folder", version: VERSION }, "folder");
     } catch (error) {
       folder = {};
     }
@@ -555,7 +555,7 @@
     const files = await tree.files(dir ? [dir] : []);
     if (!files.length) throw new Error("There is nothing to download yet.");
     const entries = files.map(([path, data]) => ({ name: path.join("/"), data }));
-    dom.download(`${dir || "web_blot"}.zip`, zip.write(entries), "application/zip");
+    dom.download(`${dir || "webblot"}.zip`, zip.write(entries), "application/zip");
     return files.length;
   };
 
@@ -575,7 +575,7 @@
     // folders as they are on disk; a zip of one folder's content gets a folder around it
     const paths = entries.map((e) => [e.name.split("/").filter(Boolean), e.data]).filter(([p]) => p.length && !p[0].startsWith("__MACOSX"));
     if (!paths.some(([p]) => p[p.length - 1] === "blot.json" || p[p.length - 1] === "figure.json"))
-      throw new Error("There are no web_blot folders in this file.");
+      throw new Error("There are no webblot folders in this file.");
     const bare = paths.some(([p]) => p.length === 2 && (p[1] === "blot.json" || p[1] === "figure.json"));
     const store = tree.store;
     const names = new Set((await store.list([])).map((e) => e.name.toLowerCase()));

@@ -593,7 +593,7 @@ def test_folder_download_restores_everything(figured, tmp_path, blot_files):
         names = set(archive.namelist())
         assert {"target/folder.json", "target/target/blot.json", "target/target/raw.tif", "target/Loading control/blot.json", "target/Figure/figure.json"} <= names
         stored = json.loads(archive.read("target/target/blot.json"))
-        assert stored["app"] == "web_blot" and stored["kind"] == "blot" and stored["transform"]["rotation_deg"] == 1.5
+        assert stored["app"] == "webblot" and stored["kind"] == "blot" and stored["transform"]["rotation_deg"] == 1.5
         assert np.array_equal(tifffile.imread(io.BytesIO(archive.read("target/target/raw.tif"))), tifffile.imread(blot_files[0]))
 
     # the page again: the folder is there as it was left

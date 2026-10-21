@@ -84,10 +84,10 @@ def test_a_blot_is_a_directory_that_can_be_read_without_the_page(ui, blot_files,
     assert raw.dtype == np.uint16 and np.array_equal(raw, blot["wb"])
     # everything about the blot, as text
     doc = json.loads(ui.read("target/target/blot.json"))
-    assert doc["app"] == "web_blot" and doc["kind"] == "blot" and doc["name"] == "target"
+    assert doc["app"] == "webblot" and doc["kind"] == "blot" and doc["name"] == "target"
     assert doc["transform"]["crop"] == [20, 30, 400, 620] and len(doc["lanes"]) == 8 and len(doc["lanes"][0]["peaks"]) == 3
     assert doc["lane_labels"][0]["title"] == "Drug" and doc["brightfield"] is None
-    assert ui.read("target/target/blot.json").startswith('{\n "app": "web_blot"')  # laid out for reading
+    assert ui.read("target/target/blot.json").startswith('{\n "app": "webblot"')  # laid out for reading
     # what the page shows, for looking at without it
     assert png_size(file_bytes(ui, "target/target/view.png")) == [590, 380] == png_size(file_bytes(ui, "target/target/lanes.png"))
     assert file_bytes(ui, "target/target/view.png") != file_bytes(ui, "target/target/lanes.png")
@@ -304,7 +304,7 @@ def test_folders_move_as_zip_files(ui, blot_files, browser, tmp_path):
     ui.click("add-sample")
     ui.saved()
     everything = ui.download("tree-download-all")
-    assert everything.suggested_filename == "web_blot.zip"
+    assert everything.suggested_filename == "webblot.zip"
     paths = [tmp_path / "one.zip", tmp_path / "all.zip"]
     one.save_as(paths[0])
     everything.save_as(paths[1])

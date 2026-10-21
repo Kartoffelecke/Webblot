@@ -1,4 +1,4 @@
-# web_blot
+# webblot
 
 Western blot and gel analysis in the browser: prepare blot images, mark lanes,
 measure bands and build a labelled multi-panel figure. Plain HTML and
@@ -6,7 +6,7 @@ JavaScript; nothing to install, no server, images stay on your computer.
 
 ## Start
 
-Use the page at <https://kartoffelecke.github.io/Webblot/>, or download the repository
+Use the page at <https://kartoffelecke.github.io/webblot/>, or download the repository
 and open `index.html` in a browser: it runs the same from your own disk, with
 no server and no internet connection. Add blot images with **Add blots** or by
 dropping them on the page (16-bit TIFF, PNG, JPEG), or try **Sample**.
